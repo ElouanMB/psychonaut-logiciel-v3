@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "opener:default",
@@ -15,11 +17,20 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "https://www.psychonaut.fr/*" },
-        { "url": "https://www.psychoactif.org/*" },
-        { "url": "https://druglab.fr/*" },
-        { "url": "https://*.druglab.fr/*" }
+        {
+          "url": "https://www.psychonaut.fr/*"
+        },
+        {
+          "url": "https://www.psychoactif.org/*"
+        },
+        {
+          "url": "https://druglab.fr/*"
+        },
+        {
+          "url": "https://*.druglab.fr/*"
+        }
       ]
-    }
+    },
+    "process:default"
   ]
 }

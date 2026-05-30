@@ -25,7 +25,8 @@ import {
 } from "./utils/db";
 import { scrapeForum, AnalysisResult, ScrapedResultDetails } from "./utils/scraper";
 import { defaultTemplatePsychoactif, defaultTemplateDruglab } from "./utils/templates";
-
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 interface Tab {
   id: string;
   title: string;
@@ -184,6 +185,27 @@ export default function App() {
       setToast((prev) => ({ ...prev, visible: false }));
     }, 3500);
   }, []);
+
+  useEffect(() => {
+    async function checkForUpdates() {
+      try {
+        const update = await check();
+        if (update) {
+          if (window.confirm(`Une nouvelle mise à jour (${update.version}) est disponible !\n\nVoulez-vous la télécharger et l'installer maintenant ?\n\nNotes :\n${update.body || 'Corrections de bugs et améliorations.'}`)) {
+            showToast("Téléchargement de la mise à jour en cours...", "info");
+            await update.downloadAndInstall();
+            await relaunch();
+          }
+        }
+      } catch (error) {
+        console.error("Erreur lors de la vérification des mises à jour :", error);
+      }
+    }
+    
+    if (!import.meta.env.DEV) {
+      checkForUpdates();
+    }
+  }, [showToast]);
 
   const handleRefreshScan = async () => {
     setRefreshingScan(true);

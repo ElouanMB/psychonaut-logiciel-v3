@@ -1,7 +1,7 @@
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Manager, State};
-use rusqlite::{params, Connection};
-use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct RenduItem {
@@ -34,33 +34,41 @@ fn greet(name: &str) -> String {
 fn load_data(state: State<'_, DbState>) -> Result<serde_json::Value, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
 
-    let mut stmt = conn.prepare("SELECT id, title, date, status, substance, content, analysis_id FROM rendus").map_err(|e| e.to_string())?;
-    let rendus_iter = stmt.query_map([], |row| {
-        Ok(RenduItem {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            date: row.get(2)?,
-            status: row.get(3)?,
-            substance: row.get(4)?,
-            content: row.get(5)?,
-            analysis_id: row.get(6)?,
+    let mut stmt = conn
+        .prepare("SELECT id, title, date, status, substance, content, analysis_id FROM rendus")
+        .map_err(|e| e.to_string())?;
+    let rendus_iter = stmt
+        .query_map([], |row| {
+            Ok(RenduItem {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                date: row.get(2)?,
+                status: row.get(3)?,
+                substance: row.get(4)?,
+                content: row.get(5)?,
+                analysis_id: row.get(6)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut rendus = Vec::new();
     for r in rendus_iter {
         rendus.push(r.map_err(|e| e.to_string())?);
     }
 
-    let mut stmt = conn.prepare("SELECT id, title, date, content FROM drafts").map_err(|e| e.to_string())?;
-    let drafts_iter = stmt.query_map([], |row| {
-        Ok(DraftItem {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            date: row.get(2)?,
-            content: row.get(3)?,
+    let mut stmt = conn
+        .prepare("SELECT id, title, date, content FROM drafts")
+        .map_err(|e| e.to_string())?;
+    let drafts_iter = stmt
+        .query_map([], |row| {
+            Ok(DraftItem {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                date: row.get(2)?,
+                content: row.get(3)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut drafts = Vec::new();
     for d in drafts_iter {
@@ -86,8 +94,17 @@ fn save_rendu(state: State<'_, DbState>, item: RenduItem) -> Result<(), String> 
             substance=excluded.substance,
             content=excluded.content,
             analysis_id=excluded.analysis_id",
-        params![item.id, item.title, item.date, item.status, item.substance, item.content, item.analysis_id],
-    ).map_err(|e| e.to_string())?;
+        params![
+            item.id,
+            item.title,
+            item.date,
+            item.status,
+            item.substance,
+            item.content,
+            item.analysis_id
+        ],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -102,21 +119,24 @@ fn save_draft(state: State<'_, DbState>, item: DraftItem) -> Result<(), String> 
             date=excluded.date,
             content=excluded.content",
         params![item.id, item.title, item.date, item.content],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 fn delete_rendu(state: State<'_, DbState>, id: String) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM rendus WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM rendus WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 fn delete_draft(state: State<'_, DbState>, id: String) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM drafts WHERE id = ?1", [id]).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM drafts WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -124,12 +144,14 @@ fn delete_draft(state: State<'_, DbState>, id: String) -> Result<(), String> {
 /// Utilise tauri-plugin-opener de façon asynchrone pour éviter tout blocage de l'UI.
 #[tauri::command]
 fn publish_to_forum(_app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
-    tauri_plugin_opener::open_url(url, None::<&str>)
-        .map_err(|e| e.to_string())
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
 fn get_gemini_key() -> String {
-    let encrypted: [u8; 39] = [49, 58, 3, 2, 59, 22, 47, 8, 2, 14, 36, 69, 1, 78, 17, 87, 31, 6, 47, 4, 23, 26, 52, 48, 46, 13, 26, 24, 42, 89, 72, 52, 8, 41, 13, 45, 22, 8, 36];
+    let encrypted: [u8; 39] = [
+        49, 58, 3, 2, 59, 22, 47, 8, 2, 14, 36, 69, 1, 78, 17, 87, 31, 6, 47, 4, 23, 26, 52, 48,
+        46, 13, 26, 24, 42, 89, 72, 52, 8, 41, 13, 45, 22, 8, 36,
+    ];
     let mask = b"psychonaut";
     let mut decrypted = Vec::new();
     for (i, &byte) in encrypted.iter().enumerate() {
@@ -142,7 +164,7 @@ fn get_gemini_key() -> String {
 async fn call_gemini(prompt: String) -> Result<String, String> {
     let key = get_gemini_key();
     let client = reqwest::Client::new();
-    
+
     let body = serde_json::json!({
         "contents": [{
             "parts": [{"text": prompt}]
@@ -164,10 +186,12 @@ async fn call_gemini(prompt: String) -> Result<String, String> {
     }
 
     let json_res: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
-    
+
     let generated_text = json_res["candidates"][0]["content"]["parts"][0]["text"]
         .as_str()
-        .ok_or_else(|| "Impossible d'extraire le texte généré de la réponse API Gemini".to_string())?;
+        .ok_or_else(|| {
+            "Impossible d'extraire le texte généré de la réponse API Gemini".to_string()
+        })?;
 
     Ok(generated_text.to_string())
 }
@@ -175,11 +199,15 @@ async fn call_gemini(prompt: String) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
-            let app_data_dir = app.path().app_local_data_dir().expect("failed to get app data dir");
+            let app_data_dir = app
+                .path()
+                .app_local_data_dir()
+                .expect("failed to get app data dir");
             std::fs::create_dir_all(&app_data_dir).expect("failed to create app data dir");
             let db_path = app_data_dir.join("psychonaut.db");
             println!("Database path: {:?}", db_path);
@@ -196,7 +224,8 @@ pub fn run() {
                     analysis_id TEXT
                 )",
                 [],
-            ).expect("failed to create rendus table");
+            )
+            .expect("failed to create rendus table");
 
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS drafts (
@@ -206,7 +235,8 @@ pub fn run() {
                     content TEXT NOT NULL
                 )",
                 [],
-            ).expect("failed to create drafts table");
+            )
+            .expect("failed to create drafts table");
 
             app.manage(DbState(Mutex::new(conn)));
             Ok(())

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "Psychonaut",
   "version": "0.1.0",
-  "identifier": "com.eloua.tauri-app",
+  "identifier": "com.psychonaut.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -37,9 +37,9 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://your-vps-or-github-url.com/update.json"
+        "https://github.com/ElouanMB/psychonaut-logiciel-v3/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW51c2VkX3B1YmtleV9mb3JfZGV2ZWxvcG1lbnRfcGxlYXNlX2NoYW5nZV9tZQ=="
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ0MEYyNDlEMDVGMDJBRTIKUldUaUt2QUZuU1FQUkRIQTlCWEZINmVTcUIyMkQ1eXBsRW9DTUl0dkNJQXhzRGVJSTFTRzluTHUK"
     }
   }
 }
