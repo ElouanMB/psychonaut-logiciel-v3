@@ -28,6 +28,12 @@
         },
         {
           "url": "https://*.druglab.fr/*"
+        },
+        {
+          "url": "http://217.154.15.49:3000/*"
+        },
+        {
+          "url": "http://localhost:3000/*"
         }
       ]
     },

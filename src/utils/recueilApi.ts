@@ -1,3 +1,5 @@
+import { fetch } from '@tauri-apps/plugin-http';
+
 const API_BASE_URL = import.meta.env.VITE_RECUEIL_API_URL || 'http://localhost:3000/api';
 
 interface ApiOptions {
