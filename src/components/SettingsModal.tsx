@@ -15,6 +15,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
   const [recueilApiKey, setRecueilApiKey] = useState(() => localStorage.getItem('recueilApiKey') || "");
   const [recueilApiPassword, setRecueilApiPassword] = useState(() => localStorage.getItem('recueilApiPassword') || "");
+  const [iaAccessKey, setIaAccessKey] = useState(() => localStorage.getItem('iaAccessKey') || "");
 
   const [testingXf, setTestingXf] = useState(false);
   const [xfStatus, setXfStatus] = useState<"none" | "success" | "error">("none");
@@ -80,6 +81,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     localStorage.setItem('xfPass', xfPass);
     localStorage.setItem('recueilApiKey', recueilApiKey);
     localStorage.setItem('recueilApiPassword', recueilApiPassword);
+    localStorage.setItem('iaAccessKey', iaAccessKey);
     window.dispatchEvent(new CustomEvent('recueilUpdated'));
     onClose();
   };
@@ -196,6 +198,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               ) : null}
               <span>{testingRecueil ? "Connexion..." : recueilStatus === "success" ? "Connecté avec succès" : recueilStatus === "error" ? `Erreur: ${recueilErrorMsg}` : "Tester la connexion à la base"}</span>
             </button>
+          </div>
+
+          <div className="h-px bg-border-main my-2" />
+
+          {/* AI Access Section */}
+          <div className="space-y-3">
+            <h3 className="text-[11px] font-bold text-accent uppercase tracking-wide flex items-center gap-1.5">
+              <span>🤖</span> Assistant IA
+            </h3>
+            
+            <div>
+              <label htmlFor="ia-key" className="block text-[10px] font-semibold text-fg-muted mb-1">Clé d'accès secrète</label>
+              <input
+                id="ia-key"
+                type="password"
+                value={iaAccessKey}
+                onChange={(e) => setIaAccessKey(e.target.value)}
+                placeholder="Entrez la clé pour déverrouiller l'IA..."
+                className="w-full bg-input-bg border border-input-border text-fg-main text-xs px-3 py-1.5 rounded outline-none focus:border-border-accent transition-all font-medium font-mono"
+              />
+            </div>
           </div>
         </div>
 

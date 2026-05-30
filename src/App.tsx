@@ -566,17 +566,21 @@ export default function App() {
     }
   };
 
-  const [mockUser, setMockUser] = useState({
-    name: localStorage.getItem('userDisplayName') || "L'élouan",
-    status: "EN LIGNE",
-    avatar: localStorage.getItem('userAvatar') || "",
+  const [mockUser, setMockUser] = useState(() => {
+    const savedName = localStorage.getItem('userDisplayName') || localStorage.getItem('xfUser');
+    return {
+      name: savedName || "Visiteur",
+      status: savedName ? "EN LIGNE" : "HORS LIGNE",
+      avatar: localStorage.getItem('userAvatar') || "",
+    };
   });
 
   useEffect(() => {
     const handleProfileUpdate = () => {
+      const savedName = localStorage.getItem('userDisplayName') || localStorage.getItem('xfUser');
       setMockUser({
-        name: localStorage.getItem('userDisplayName') || localStorage.getItem('xfUser') || "L'élouan",
-        status: "EN LIGNE",
+        name: savedName || "Visiteur",
+        status: savedName ? "EN LIGNE" : "HORS LIGNE",
         avatar: localStorage.getItem('userAvatar') || "",
       });
     };

@@ -91,15 +91,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           <button
             type="button"
-            onClick={toggleTheme}
-            title={theme === "dark" ? "Passer au thème clair" : "Passer au thème sombre"}
-            className="h-8 w-8 flex items-center justify-center rounded-md text-fg-secondary hover:text-fg-main hover:bg-hover transition-colors"
-          >
-            {theme === "dark" ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
-          </button>
-
-          <button
-            type="button"
             onClick={toggleAgent}
             title="Assistant IA"
             className={`h-8 w-8 flex items-center justify-center rounded-md transition-colors ${
@@ -109,6 +100,15 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Lightbulb className="w-4.5 h-4.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Passer au thème clair" : "Passer au thème sombre"}
+            className="h-8 w-8 flex items-center justify-center rounded-md text-fg-secondary hover:text-fg-main hover:bg-hover transition-colors"
+          >
+            {theme === "dark" ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
           </button>
 
           <button
@@ -138,7 +138,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {user.name.slice(0, 2)}
               </div>
             )}
-            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-success border-[1.5px] border-chrome-bg rounded-full" />
+            <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 border-[1.5px] border-chrome-bg rounded-full ${user.status === "EN LIGNE" ? "bg-success" : "bg-fg-muted"}`} />
           </div>
           <span className="text-xs font-medium text-fg-main hidden md:block">{user.name}</span>
         </div>

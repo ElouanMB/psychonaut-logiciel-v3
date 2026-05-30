@@ -30,6 +30,16 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults }
   const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisResult | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const [isLocked, setIsLocked] = useState(() => localStorage.getItem("iaAccessKey") !== "IA-PSYCHO-2026-XQW9");
+
+  useEffect(() => {
+    const handleStorageUpdate = () => {
+      setIsLocked(localStorage.getItem("iaAccessKey") !== "IA-PSYCHO-2026-XQW9");
+    };
+    window.addEventListener("recueilUpdated", handleStorageUpdate);
+    return () => window.removeEventListener("recueilUpdated", handleStorageUpdate);
+  }, []);
+
   // Filter analyses that are ready/identified
   const readyAnalyses = scrapedResults.filter((r) =>
     r.identifiers.some((id) => id.psychoFound || id.druglabFound)
@@ -299,6 +309,23 @@ Répondez à l'utilisateur de manière concise et pertinente. S'il vous demande 
       window.dispatchEvent(new CustomEvent("insertEditorText", { detail: bbcode }));
     }
   };
+
+  if (isLocked) {
+    return (
+      <aside className="w-80 h-full bg-sidebar-bg border-l border-border-main flex flex-col items-center justify-center select-none p-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center mb-4">
+          <Sparkles className="w-7 h-7 text-accent" />
+        </div>
+        <h3 className="text-sm font-bold text-fg-main mb-2">Assistant IA Verrouillé</h3>
+        <p className="text-[11px] text-fg-muted mb-6 leading-relaxed">
+          L'accès à l'intelligence artificielle est restreint. Une clé d'accès secrète est requise.
+        </p>
+        <p className="text-[10px] text-fg-muted/60 italic">
+          (Rendez-vous dans les Paramètres ⚙️ pour saisir la clé d'accès)
+        </p>
+      </aside>
+    );
+  }
 
   return (
     <aside className="w-80 h-full bg-sidebar-bg border-l border-border-main flex flex-col select-none">
