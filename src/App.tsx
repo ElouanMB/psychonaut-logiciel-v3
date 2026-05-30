@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { EditorArea } from "./components/EditorArea";
+import { AgentPanel } from "./components/AgentPanel";
 import { SettingsModal } from "./components/SettingsModal";
 import { RefreshCw, CheckCircle2 } from "lucide-react";
 import {
@@ -62,6 +63,15 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [refreshingScan, setRefreshingScan] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
+
+  // Agent Sidebar Toggle
+  const [isAgentOpen, setIsAgentOpen] = useState<boolean>(() => {
+    return localStorage.getItem("sidebar_agentOpen") === "true";
+  });
+
+  useEffect(() => {
+    localStorage.setItem("sidebar_agentOpen", isAgentOpen.toString());
+  }, [isAgentOpen]);
   
   const [scrapedResults, setScrapedResults] = useState<AnalysisResult[]>(() => {
     const saved = localStorage.getItem('scrapedResults');
@@ -123,29 +133,45 @@ export default function App() {
         ]);
         setActiveTabId(initialRendus[0].id);
       } else {
-        setRendus(data.rendus);
-        setDrafts(data.drafts);
-        if (data.rendus.length > 0) {
+        const parseDate = (d: string) => {
+          if (!d) return 0;
+          if (d.includes("/")) {
+            const parts = d.split("/");
+            if (parts.length === 3) {
+              const [day, month, year] = parts;
+              return new Date(`${year}-${month}-${day}`).getTime();
+            }
+          }
+          const t = new Date(d).getTime();
+          return isNaN(t) ? 0 : t;
+        };
+
+        const sortedRendus = [...data.rendus].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+        const sortedDrafts = [...data.drafts].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+
+        setRendus(sortedRendus);
+        setDrafts(sortedDrafts);
+        if (sortedRendus.length > 0) {
           setTabs([
             {
-              id: data.rendus[0].id,
-              title: data.rendus[0].title,
-              content: data.rendus[0].content,
-              status: data.rendus[0].status,
+              id: sortedRendus[0].id,
+              title: sortedRendus[0].title,
+              content: sortedRendus[0].content,
+              status: sortedRendus[0].status,
               isDirty: false,
             },
           ]);
-          setActiveTabId(data.rendus[0].id);
-        } else if (data.drafts.length > 0) {
+          setActiveTabId(sortedRendus[0].id);
+        } else if (sortedDrafts.length > 0) {
           setTabs([
             {
-              id: data.drafts[0].id,
-              title: data.drafts[0].title,
-              content: data.drafts[0].content,
+              id: sortedDrafts[0].id,
+              title: sortedDrafts[0].title,
+              content: sortedDrafts[0].content,
               isDirty: false,
             },
           ]);
-          setActiveTabId(data.drafts[0].id);
+          setActiveTabId(sortedDrafts[0].id);
         }
       }
     }
@@ -560,6 +586,8 @@ export default function App() {
           setActiveTabId(id);
         }}
         user={mockUser}
+        isAgentOpen={isAgentOpen}
+        toggleAgent={() => setIsAgentOpen(!isAgentOpen)}
       />
 
       {/* 2. BODY WORKSPACE */}
@@ -591,6 +619,14 @@ export default function App() {
           scrapedResults={scrapedResults}
           onCreateRenduFromResult={handleCreateRenduFromResult}
         />
+
+        {/* Right AI Sidebar */}
+        {isAgentOpen && (
+          <AgentPanel
+            rendus={rendus}
+            scrapedResults={scrapedResults}
+          />
+        )}
       </div>
 
       {/* 3. FOOTER */}

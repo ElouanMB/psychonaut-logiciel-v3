@@ -1,4 +1,4 @@
-import { Sun, Moon, Settings, Library, Minus, Square, X, ClipboardList } from "lucide-react";
+import { Sun, Moon, Settings, Library, Minus, Square, X, ClipboardList, Lightbulb } from "lucide-react";
 
 interface HeaderProps {
   theme: "light" | "dark";
@@ -11,6 +11,8 @@ interface HeaderProps {
     status: string;
     avatar: string;
   };
+  isAgentOpen: boolean;
+  toggleAgent: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,6 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
   openResultsTab,
   openRecueilTab,
   user,
+  isAgentOpen,
+  toggleAgent,
 }) => {
   const handleMinimize = async () => {
     try {
@@ -92,6 +96,19 @@ export const Header: React.FC<HeaderProps> = ({
             className="h-8 w-8 flex items-center justify-center rounded-md text-fg-secondary hover:text-fg-main hover:bg-hover transition-colors"
           >
             {theme === "dark" ? <Sun className="w-4.5 h-4.5" /> : <Moon className="w-4.5 h-4.5" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleAgent}
+            title="Assistant IA"
+            className={`h-8 w-8 flex items-center justify-center rounded-md transition-colors ${
+              isAgentOpen
+                ? "text-accent bg-accent/15"
+                : "text-fg-secondary hover:text-fg-main hover:bg-hover"
+            }`}
+          >
+            <Lightbulb className="w-4.5 h-4.5" />
           </button>
 
           <button

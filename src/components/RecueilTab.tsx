@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { recueilApi, Resource, ResourceItem } from '../utils/recueilApi';
 import { Folder, FileText, Link as LinkIcon, Plus, ChevronRight, Edit2, Trash2, ArrowLeft } from 'lucide-react';
 
-export function RecueilTab({ theme }: { theme: 'light' | 'dark' }) {
+export function RecueilTab({ theme: _theme }: { theme: 'light' | 'dark' }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [apiKey, setApiKey] = useState(localStorage.getItem('recueilApiKey') || '');
   const [apiPassword, setApiPassword] = useState(localStorage.getItem('recueilApiPassword') || '');

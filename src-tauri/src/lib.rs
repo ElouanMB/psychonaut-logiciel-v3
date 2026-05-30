@@ -121,11 +121,55 @@ fn delete_draft(state: State<'_, DbState>, id: String) -> Result<(), String> {
 }
 
 /// Ouvre l'URL du forum dans le navigateur par défaut du système.
-/// Utilise tauri-plugin-opener pour éviter tout blocage de l'UI.
+/// Utilise tauri-plugin-opener de façon asynchrone pour éviter tout blocage de l'UI.
 #[tauri::command]
-fn publish_to_forum(app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
+fn publish_to_forum(_app_handle: tauri::AppHandle, url: String) -> Result<(), String> {
     tauri_plugin_opener::open_url(url, None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+fn get_gemini_key() -> String {
+    let encrypted: [u8; 39] = [49, 58, 3, 2, 59, 22, 47, 8, 2, 14, 36, 69, 1, 78, 17, 87, 31, 6, 47, 4, 23, 26, 52, 48, 46, 13, 26, 24, 42, 89, 72, 52, 8, 41, 13, 45, 22, 8, 36];
+    let mask = b"psychonaut";
+    let mut decrypted = Vec::new();
+    for (i, &byte) in encrypted.iter().enumerate() {
+        decrypted.push(byte ^ mask[i % mask.len()]);
+    }
+    String::from_utf8(decrypted).unwrap_or_default()
+}
+
+#[tauri::command]
+async fn call_gemini(prompt: String) -> Result<String, String> {
+    let key = get_gemini_key();
+    let client = reqwest::Client::new();
+    
+    let body = serde_json::json!({
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    });
+
+    let res = client.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent")
+        .header("Content-Type", "application/json")
+        .header("x-goog-api-key", &key)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Erreur API Gemini ({}): {}", status, err_text));
+    }
+
+    let json_res: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    
+    let generated_text = json_res["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "Impossible d'extraire le texte généré de la réponse API Gemini".to_string())?;
+
+    Ok(generated_text.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -175,6 +219,7 @@ pub fn run() {
             delete_rendu,
             delete_draft,
             publish_to_forum,
+            call_gemini,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
