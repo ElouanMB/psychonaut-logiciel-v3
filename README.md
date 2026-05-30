@@ -46,7 +46,20 @@ Logiciel de bureau professionnel conçu pour centraliser le traitement, la réda
 ## 📦 Téléchargement et Installation
 
 L'application est disponible pour **Windows, macOS, et Linux**.  
-Vous pouvez télécharger la dernière version pré-compilée directement dans l'onglet [Releases](https://github.com/ElouanMB/psychonaut-logiciel-v3/releases) de ce dépôt.
+Rendez-vous dans l'onglet [Releases](https://github.com/ElouanMB/psychonaut-logiciel-v3/releases) de ce dépôt pour télécharger la dernière version, puis choisissez le fichier correspondant à votre système d'exploitation :
+
+### 🪟 Windows
+* **Téléchargez** : `Psychonaut_1.0.0_x64-setup.exe` (Recommandé)
+* *Note : Il se peut que Windows Defender affiche un avertissement au premier lancement. Cliquez sur "Informations complémentaires" puis "Exécuter quand même".*
+
+### 🍏 macOS
+* **Mac récents (Puce M1/M2/M3)** : Téléchargez `Psychonaut_1.0.0_aarch64.dmg`
+* **Mac plus anciens (Puce Intel)** : Téléchargez `Psychonaut_1.0.0_x64.dmg`
+
+### 🐧 Linux
+* **Universel (Recommandé)** : Téléchargez `Psychonaut_1.0.0_amd64.AppImage` *(à rendre exécutable avant lancement)*
+* **Debian / Ubuntu** : Téléchargez `Psychonaut_1.0.0_amd64.deb`
+* **Fedora / RHEL** : Téléchargez `Psychonaut-1.0.0-1.x86_64.rpm`
 
 ---
 
