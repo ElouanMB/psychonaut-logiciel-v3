@@ -1,0 +1,19 @@
+PSYCHONAUT MANAGER v3 - Licence Associative
+Copyright (c) 2026 Elouan Marbais / Association Psychonaut
+
+CADRE D'UTILISATION
+Ce logiciel est un outil bénévole développé exclusivement pour les besoins de l'association Psychonaut et ses actions de Réduction des Risques (RdR). Son usage est strictement non-commercial.
+
+ENGAGEMENTS DE L'UTILISATEUR
+En utilisant ce logiciel, vous reconnaissez :
+1. USAGE INTERNE : L'outil est destiné aux membres et contributeurs de l'association.
+2. RESPONSABILITÉ DES ACCÈS : Vous êtes garant de la confidentialité des accès VPS et XenForo configurés dans l'outil.
+3. RESPECT DES DONNÉES : Les données traitées sont sensibles et restent la propriété morale de l'association Psychonaut.
+
+PROTECTION DU BÉNÉVOLAT (DISCLAIMER)
+Ce logiciel est fourni gratuitement et "en l'état". 
+Le développement étant réalisé de manière bénévole :
+- L'auteur ne garantit pas l'absence de bugs ou l'adéquation parfaite à tous les besoins.
+- EN AUCUN CAS l'auteur ou l'association ne pourront être tenus responsables des dommages directs ou indirects (perte de données, interruption d'accès au VPS, etc.) résultant de l'utilisation de cet outil.
+
+L'utilisation de ce logiciel implique l'acceptation pleine et entière de ces conditions.

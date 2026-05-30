@@ -1,0 +1,215 @@
+
+/* ============================================================
+   Psychonaut — Design System
+   Philosophie: minimaliste, aéré, contraste clair
+   Accent: #B478BD
+   ============================================================ */
+
+html, body {
+  background-color: var(--color-bg-base);
+  color: var(--color-fg-main);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   TOKENS COMMUNS
+   ============================================================ */
+:root {
+  --color-accent:         #9D5FA8;
+  --color-accent-hover:   #8B4D96;
+  --color-accent-active:  #793A84;
+  --color-accent-subtle:  hsl(291, 28%, 93%);
+  --color-accent-fg:      #ffffff;
+
+  /* Statuts */
+  --color-success:        #22c55e;
+  --color-warning:        #f59e0b;
+  --color-danger:         #ef4444;
+}
+
+/* ============================================================
+   THÈME CLAIR
+   ============================================================ */
+:root {
+  /* Surfaces */
+  --color-bg-base:        #F5F5F7;
+  --color-bg-editor:      #FFFFFF;
+  --color-bg-sidebar:     #EFEFEF;
+  --color-bg-chrome:      #E8E8EA;
+
+  /* Texte */
+  --color-fg-main:        #000000;
+  --color-fg-secondary:   #30303E;
+  --color-fg-muted:       #60606F;
+
+  /* Bordures */
+  --color-border:         #DCDCDF;
+  --color-border-strong:  #C0C0C6;
+  --color-border-focus:   #B478BD;
+
+  /* Interactifs */
+  --color-input-bg:       #FFFFFF;
+  --color-input-border:   #D4D4D8;
+  --color-hover:          #E2E2E6;
+  --color-active:         #DCDAF0;
+
+  /* Ombres */
+  --color-shadow-sm:      rgba(0, 0, 0, 0.05);
+  --color-shadow-md:      rgba(0, 0, 0, 0.10);
+
+  /* Editeur */
+  --color-editor-active-line: rgba(0, 0, 0, 0.04);
+  --color-editor-selection:   #E4E4E7;
+  --color-editor-tag-fg:      #9c82a2; /* Mauve doux et chaleureux en clair */
+  --color-editor-line-numbers-fg: #A1A1AA;
+}
+
+/* ============================================================
+   THÈME SOMBRE — VS Code Dark+ (jaune remplacé par rose #B478BD)
+   ============================================================ */
+.dark {
+  /* Surfaces — exactement VS Code Dark+ */
+  --color-bg-base:        #1E1E1E;
+  --color-bg-editor:      #2d2a2e;
+  --color-bg-sidebar:     #221f22;
+  --color-bg-chrome:      #221f22;   /* Activity bar VS Code */
+
+  /* Texte */
+  --color-fg-main:        #FFFFFF;
+  --color-fg-secondary:   #CCCCCC;
+  --color-fg-muted:       #A0A0A0;
+
+  /* Bordures */
+  --color-border:         #474747;
+  --color-border-strong:  #5A5A5A;
+  --color-border-focus:   #B478BD;
+
+  /* Interactifs */
+  --color-input-bg:       #3C3C3C;
+  --color-input-border:   #474747;
+  --color-hover:          #2A2D2E;
+  --color-active:         #37373D;
+
+  /* Ombres */
+  --color-shadow-sm:      rgba(0, 0, 0, 0.30);
+  --color-shadow-md:      rgba(0, 0, 0, 0.50);
+
+  --color-accent-subtle:  hsl(291, 16%, 22%);
+  --color-success:        #4ade80;
+
+  /* Editeur */
+  --color-editor-active-line: rgba(255, 255, 255, 0.035);
+  --color-editor-selection:   #4A464A;
+  --color-editor-tag-fg:      #8a718f; /* Mauve estompé en sombre */
+  --color-editor-line-numbers-fg: #A0A0A0;
+}
+
+/* ============================================================
+   CODEMIRROR
+   ============================================================ */
+.cm-editor {
+  background-color: var(--color-bg-editor) !important;
+  color: var(--color-fg-main) !important;
+  font-family: 'Menlo', 'Consolas', 'Fira Code', monospace !important;
+  font-size: 13px !important;
+  height: 100%;
+}
+
+.cm-editor .cm-scroller {
+  font-family: inherit !important;
+  line-height: 1.7 !important;
+}
+
+.cm-editor .cm-gutters {
+  background-color: var(--color-bg-editor) !important;
+  color: var(--color-editor-line-numbers-fg) !important;
+  border-right: none !important;
+  min-width: 44px !important;
+}
+
+/* Centrer les numéros de ligne et icônes des gutters */
+.cm-editor .cm-gutterElement {
+  text-align: center !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+}
+
+.cm-editor .cm-lineNumbers .cm-gutterElement {
+  color: var(--color-editor-line-numbers-fg) !important;
+}
+
+.cm-editor .cm-activeLine {
+  background-color: var(--color-editor-active-line) !important;
+}
+
+.cm-editor .cm-activeLineGutter {
+  background-color: transparent !important;
+}
+
+.cm-editor .cm-content {
+  caret-color: var(--color-accent) !important;
+  padding: 4px 0 !important;
+}
+
+.cm-editor .cm-line {
+  padding-left: 0 !important;
+}
+
+.cm-editor .cm-cursor {
+  border-left-color: var(--color-accent-fg) !important;
+  border-left-width: 2px !important;
+}
+
+.cm-editor .cm-selectionBackground {
+  background-color: var(--color-editor-selection) !important;
+}
+
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+
+/* Style all tags/brackets (mauve) except main code tokens */
+.cm-editor span:not(.tok-comment):not(.tok-string):not(.tok-variableName):not(.tok-heading):not(.tok-number):not(.tok-propertyName):not([class*="comment"]):not([class*="string"]):not([class*="variableName"]):not([class*="heading"]):not([class*="number"]):not([class*="propertyName"]) {
+  color: var(--color-editor-tag-fg) !important;
+  text-decoration: none !important;
+  font-weight: normal !important;
+}
+
+/* Tokens — Sombre (VS Code Dark+ exact) */
+.dark .cm-editor .tok-string       { color: #CE9178 !important; }           /* orange-brun */
+.dark .cm-editor .tok-comment      { color: #6A9955 !important; font-style: italic; } /* vert */
+.dark .cm-editor .tok-variableName { color: #9CDCFE !important; }           /* bleu clair */
+.dark .cm-editor .tok-heading      { color: #B478BD !important; font-weight: 600; }  /* rose accent */
+.dark .cm-editor .tok-number       { color: #B5CEA8 !important; }           /* vert clair */
+.dark .cm-editor .tok-propertyName { color: #CCCCCC !important; }
+
+/* Tokens — Clair */
+.light .cm-editor .tok-string       { color: #C0622F !important; }
+.light .cm-editor .tok-comment      { color: #5A7A45 !important; font-style: italic; }
+.light .cm-editor .tok-variableName { color: #235899 !important; }
+.light .cm-editor .tok-heading      { color: #8B4FA0 !important; font-weight: 600; }
+.light .cm-editor .tok-number       { color: #2E7D32 !important; }
+
+/* ============================================================
+   SCROLLBARS
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-muted);
+}

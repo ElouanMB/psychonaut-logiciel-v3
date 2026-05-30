@@ -1,0 +1,43 @@
+@import "tailwindcss";
+@import "./theme.css";
+
+@theme {
+  /* Accent */
+  --color-accent:           var(--color-accent);
+  --color-accent-hover:     var(--color-accent-hover);
+  --color-accent-active:    var(--color-accent-active);
+  --color-accent-subtle:    var(--color-accent-subtle);
+  --color-accent-fg:        var(--color-accent-fg);
+
+  /* Statuts */
+  --color-success:          var(--color-success);
+  --color-warning:          var(--color-warning);
+  --color-danger:           var(--color-danger);
+
+  /* Surfaces */
+  --color-base-bg:          var(--color-bg-base);
+  --color-editor-bg:        var(--color-bg-editor);
+  --color-sidebar-bg:       var(--color-bg-sidebar);
+  --color-chrome-bg:        var(--color-bg-chrome);
+  --color-tooltip-bg:       var(--color-bg-tooltip, var(--color-bg-chrome));
+
+  /* Texte */
+  --color-fg-main:          var(--color-fg-main);
+  --color-fg-secondary:     var(--color-fg-secondary);
+  --color-fg-muted:         var(--color-fg-muted);
+
+  /* Bordures */
+  --color-border-main:      var(--color-border);
+  --color-border-strong:    var(--color-border-strong);
+  --color-border-accent:    var(--color-border-focus);
+
+  /* Interactifs */
+  --color-input-bg:         var(--color-input-bg);
+  --color-input-border:     var(--color-input-border);
+  --color-hover:            var(--color-hover);
+  --color-active:           var(--color-active);
+
+  /* Compatibilité anciens tokens */
+  --color-list-hover:       var(--color-hover);
+  --color-list-active:      var(--color-active);
+}
