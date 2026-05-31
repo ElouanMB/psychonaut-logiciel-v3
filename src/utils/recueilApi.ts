@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 
-const API_BASE_URL = import.meta.env.VITE_RECUEIL_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = 'http://217.154.15.49:3000/api';
 
 interface ApiOptions {
   method?: string;
