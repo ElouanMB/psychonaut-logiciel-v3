@@ -1,4 +1,4 @@
-import { fetch } from '@tauri-apps/plugin-http';
+import { invoke } from '@tauri-apps/api/core';
 
 const API_BASE_URL = import.meta.env.VITE_RECUEIL_API_URL || 'http://localhost:3000/api';
 
@@ -29,27 +29,15 @@ async function fetchApi(endpoint: string, options: ApiOptions = {}) {
   const apiPassword = localStorage.getItem('recueilApiPassword') || '';
   const username = localStorage.getItem('xfUser') || localStorage.getItem('userDisplayName') || 'Anonymous';
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'x-api-key': apiKey,
-    'x-api-password': apiPassword,
-    'x-username': username,
-  };
-
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  // On passe par Rust (reqwest) pour éviter le blocage Mixed Content de WebView2 en production
+  return invoke<any>('recueil_fetch', {
+    url: `${API_BASE_URL}${endpoint}`,
     method: options.method || 'GET',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
+    apiKey,
+    apiPassword,
+    username,
+    body: options.body ? JSON.stringify(options.body) : null,
   });
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Identifiants incorrects.');
-    }
-    throw new Error(`Erreur API: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export const recueilApi = {

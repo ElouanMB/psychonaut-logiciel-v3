@@ -196,6 +196,51 @@ async fn call_gemini(prompt: String) -> Result<String, String> {
     Ok(generated_text.to_string())
 }
 
+/// Proxy les appels HTTP vers l'API Recueil depuis Rust (évite le Mixed Content WebView2 en production).
+#[tauri::command]
+async fn recueil_fetch(
+    url: String,
+    method: String,
+    api_key: String,
+    api_password: String,
+    username: String,
+    body: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+
+    let req = match method.to_uppercase().as_str() {
+        "POST" => client.post(&url),
+        "PUT" => client.put(&url),
+        "DELETE" => client.delete(&url),
+        _ => client.get(&url),
+    };
+
+    let req = req
+        .header("Content-Type", "application/json")
+        .header("x-api-key", &api_key)
+        .header("x-api-password", &api_password)
+        .header("x-username", &username);
+
+    let req = if let Some(b) = body {
+        req.body(b)
+    } else {
+        req
+    };
+
+    let res = req.send().await.map_err(|e| e.to_string())?;
+
+    let status = res.status();
+    if status == 401 {
+        return Err("Identifiants incorrects.".to_string());
+    }
+    if !status.is_success() {
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Erreur API: {} {}", status.as_u16(), err_text));
+    }
+
+    res.json::<serde_json::Value>().await.map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -250,6 +295,7 @@ pub fn run() {
             delete_draft,
             publish_to_forum,
             call_gemini,
+            recueil_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
