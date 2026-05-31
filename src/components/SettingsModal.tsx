@@ -67,7 +67,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
       setRecueilStatus("success");
     } catch (err: any) {
       setRecueilStatus("error");
-      setRecueilErrorMsg(err.message || "Erreur de connexion");
+      // invoke() de Tauri rejette avec une string, pas un Error object
+      setRecueilErrorMsg(err?.message || String(err) || "Erreur de connexion");
       
       if (oldKey !== null) localStorage.setItem('recueilApiKey', oldKey);
       if (oldPass !== null) localStorage.setItem('recueilApiPassword', oldPass);

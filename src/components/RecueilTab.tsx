@@ -55,7 +55,8 @@ export function RecueilTab({ theme: _theme }: { theme: 'light' | 'dark' }) {
       setResources(res);
       setIsAuthenticated(true);
     } catch (err: any) {
-      setAuthError(err.message);
+      // invoke() de Tauri rejette avec une string, pas un Error object
+      setAuthError(err?.message || String(err) || 'Erreur de connexion');
       setIsAuthenticated(false);
     } finally {
       setLoading(false);
