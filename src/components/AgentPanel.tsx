@@ -6,7 +6,7 @@ import { recueilApi } from "../utils/recueilApi";
 import type { ResourceItem } from "../utils/recueilApi";
 import { defaultTemplatePsychoactif, defaultTemplateDruglab } from "../utils/templates";
 import type { AnalysisResult, EnrichedIdentifier, ScrapedResultDetails } from "../utils/scraper";
-import { scrapePsychoactifDetails, scrapeDruglabDetails } from "../utils/scraper";
+import { scrapePsychoactifDetails, scrapeDruglabDetails, scrapePsychonautRequest } from "../utils/scraper";
 
 interface Message {
   id: string;
@@ -161,7 +161,15 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
     const isDruglab = identifier.druglabFound && identifier.druglabUrl;
 
     // 1. Scrape details
+    let requestText = "Aucune demande initiale récupérée.";
     try {
+      if (analysis.url) {
+        const req = await scrapePsychonautRequest(analysis.url);
+        if (req) {
+          requestText = req;
+        }
+      }
+
       if (isPsychoactif) {
         details = await scrapePsychoactifDetails(identifier.psychoUrl || "");
       } else if (isDruglab) {
@@ -224,6 +232,9 @@ Voici les informations sur l'analyse en cours :
 - Titre de l'analyse : ${analysis.title}
 - Identifiant choisi : ${identifier.canonical}
 - Source : ${isPsychoactif ? "Psychoactif" : "DrugLab"}
+
+Voici la demande initiale de l'utilisateur (le "brief") récupérée sur le forum :
+${requestText}
 
 Données brutes récupérées pour l'analyse :
 ${detailsText}

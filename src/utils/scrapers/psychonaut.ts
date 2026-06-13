@@ -64,10 +64,19 @@ export async function loginToPsychonaut(user?: string, pass?: string): Promise<{
     }
 
     return { success: true, username: displayName || username, avatar };
-  } catch (e: any) {
+  } catch (e) {
     console.error('Login error', e);
-    return { success: false, error: e.message };
+    return { success: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+interface ParsedThread {
+  title: string;
+  url: string;
+  label: string | null;
+  closed: boolean;
+  createdAt: string | null;
+  identifiers: { raw: string; canonical: string }[];
 }
 
 export async function scrapeForum(pages: number = 1, onProgress?: (p: number) => void): Promise<AnalysisResult[]> {
@@ -76,7 +85,7 @@ export async function scrapeForum(pages: number = 1, onProgress?: (p: number) =>
   await loginToPsychonaut();
 
   const forumPath = '/forums/demandes.160/';
-  const threads: any[] = [];
+  const threads: ParsedThread[] = [];
 
   const firstPageRes = await fetch(`${psychonautBase}${forumPath}`, {
     method: 'GET',
@@ -159,8 +168,8 @@ export async function scrapeForum(pages: number = 1, onProgress?: (p: number) =>
   return results;
 }
 
-function parseThreads(doc: Document) {
-  const arr: any[] = [];
+function parseThreads(doc: Document): ParsedThread[] {
+  const arr: ParsedThread[] = [];
   const items = doc.querySelectorAll('.structItem.structItem--thread');
   
   items.forEach((el) => {
@@ -208,27 +217,55 @@ function extractIdentifiers(title: string) {
   };
 
   const reDrug = /\b(ATP-?)?(\d{4}-\d{3,6})\b/gi;
-  let m;
-  while ((m = reDrug.exec(title)) !== null) {
-    add(m[0], m[2]);
+  for (const match of title.matchAll(reDrug)) {
+    add(match[0], match[2]);
   }
 
   const rePsy = /PSY(?:CHO)?\s*(\d{5,7})/gi;
-  while ((m = rePsy.exec(title)) !== null) {
-    add(m[0].toUpperCase(), `PSYCHO${m[1]}`);
+  for (const match of title.matchAll(rePsy)) {
+    add(match[0].toUpperCase(), `PSYCHO${match[1]}`);
   }
 
   const reInBr = /\[(\d{5,7})\]/g;
-  while ((m = reInBr.exec(title)) !== null) {
-    add(`[${m[1]}]`, `PSYCHO${m[1]}`);
+  for (const match of title.matchAll(reInBr)) {
+    add(`[${match[1]}]`, `PSYCHO${match[1]}`);
   }
 
   const reBare = /\b(\d{5,7})\b/g;
-  while ((m = reBare.exec(title)) !== null) {
-    if (!/^\d{4}-/.test(m[1])) {
-      add(m[1], `PSYCHO${m[1]}`);
+  for (const match of title.matchAll(reBare)) {
+    if (!/^\d{4}-/.test(match[1])) {
+      add(match[1], `PSYCHO${match[1]}`);
     }
   }
 
   return found;
 }
+
+export async function scrapePsychonautRequest(threadUrl: string): Promise<string | null> {
+  try {
+    const fullUrl = threadUrl.startsWith('http') ? threadUrl : `${psychonautBase}${threadUrl}`;
+    const res = await fetch(fullUrl, { method: 'GET' });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const firstPost = doc.querySelector('.message-body .bbWrapper');
+    if (firstPost) {
+      // Copy the node to avoid mutating the parsed DOM unnecessarily
+      const clone = firstPost.cloneNode(true) as HTMLElement;
+      
+      // Remove quotes to only get the original author's request
+      clone.querySelectorAll('.bbCodeBlock--quote').forEach(quote => { quote.remove(); });
+      
+      // Replace <br> with newlines to preserve formatting in textContent
+      clone.querySelectorAll('br').forEach(br => { br.replaceWith('\n'); });
+      
+      return clone.textContent?.trim() || null;
+    }
+    return null;
+  } catch (e) {
+    console.error("Erreur lors de la récupération de la demande:", e);
+    return null;
+  }
+}
+
