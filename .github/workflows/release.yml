@@ -48,6 +48,13 @@ jobs:
       - name: install frontend dependencies
         run: pnpm install
 
+      - name: Verify TAURI_PRIVATE_KEY is set
+        env:
+          KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "ERREUR CRITIQUE: TAURI_PRIVATE_KEY est VIDE ! Le secret n'est pas lu par GitHub."; exit 1; else echo "Le secret TAURI_PRIVATE_KEY est bien présent."; fi
+        shell: bash
+
       - name: build tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -60,4 +67,5 @@ jobs:
           releaseBody: 'Nouvelle mise à jour disponible !'
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
