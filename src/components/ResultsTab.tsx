@@ -15,7 +15,9 @@ const getStatus = (r: AnalysisResult) => {
 };
 
 export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreateRenduFromResult }) => {
-  const [hideSintes, setHideSintes] = useState(false);
+  const [hideSintes, setHideSintes] = useState(() => {
+    return localStorage.getItem('results_hide_sintes') === 'true';
+  });
   const [checkedItems, setCheckedItems] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem('results_checked_items');
@@ -31,6 +33,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
       if (next.has(url)) next.delete(url);
       else next.add(url);
       localStorage.setItem('results_checked_items', JSON.stringify(Array.from(next)));
+      window.dispatchEvent(new Event('checkedItemsChanged'));
       return next;
     });
   };
@@ -78,7 +81,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
     return null;
   };
 
-  const [expandedUrl, setExpandedUrl] = useState<string | null>(null);
+  const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set());
   const [detailsCache, setDetailsCache] = useState<Record<string, ScrapedResultDetails | null>>({});
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [isWritingId, setIsWritingId] = useState<string | null>(null);
@@ -110,11 +113,12 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
   };
 
   const toggleExpand = async (itemUrl: string, psychoUrl?: string, druglabUrl?: string) => {
-    if (expandedUrl === itemUrl) {
-      setExpandedUrl(null);
-      return;
-    }
-    setExpandedUrl(itemUrl);
+    setExpandedUrls(prev => {
+      const next = new Set(prev);
+      if (next.has(itemUrl)) next.delete(itemUrl);
+      else next.add(itemUrl);
+      return next;
+    });
     if ((!psychoUrl && !druglabUrl) || detailsCache[itemUrl]) return;
     
     setIsLoadingDetails(true);
@@ -137,7 +141,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
     const isReady = status === "PRÊT";
     const tag = getTagStyle(item.label);
     const isChecked = checkedItems.has(item.url);
-    const isExpanded = expandedUrl === item.url;
+    const isExpanded = expandedUrls.has(item.url);
     
     const firstPsychoUrl = item.identifiers.find(id => id.psychoUrl)?.psychoUrl;
     const firstDruglabUrl = item.identifiers.find(id => id.druglabUrl)?.druglabUrl;
@@ -338,7 +342,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
               <input 
                 type="checkbox" 
                 checked={hideSintes} 
-                onChange={(e) => setHideSintes(e.target.checked)}
+                onChange={(e) => {
+                  setHideSintes(e.target.checked);
+                  localStorage.setItem('results_hide_sintes', String(e.target.checked));
+                  window.dispatchEvent(new Event('hideSintesChanged'));
+                }}
                 className="rounded border-border-main bg-chrome-bg text-accent focus:ring-accent/50"
               />
               Masquer SINTES

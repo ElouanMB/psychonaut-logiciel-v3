@@ -335,6 +335,23 @@ export default function App() {
     showToast("Rendu généré à partir de l'analyse.", "success");
   };
 
+  const handleCreateRenduFromAI = async (title: string, content: string) => {
+    const newId = `PSYCHO-${Math.floor(100000 + Math.random() * 900000)}`;
+    const newItem: RenduItem = {
+      id: newId,
+      title: title,
+      date: new Date().toLocaleDateString("fr-FR"),
+      status: "EN_ATTENTE",
+      substance: "Substance",
+      content: content,
+      analysisId: newId,
+    };
+    await dbSaveRendu(newItem);
+    setRendus((prev) => [newItem, ...prev]);
+    openRenduInTab(newItem);
+    showToast("Nouveau rendu créé par l'IA.", "success");
+  };
+
   const handleCreateDraft = async () => {
     const newId = `draft-${Date.now()}`;
     const newItem: DraftItem = {
@@ -651,6 +668,7 @@ export default function App() {
           <AgentPanel
             rendus={rendus}
             scrapedResults={scrapedResults}
+            onCreateRenduFromAI={handleCreateRenduFromAI}
           />
         )}
       </div>

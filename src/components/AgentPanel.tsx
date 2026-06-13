@@ -18,11 +18,12 @@ interface Message {
 interface AgentPanelProps {
   rendus: RenduItem[];
   scrapedResults: AnalysisResult[];
+  onCreateRenduFromAI?: (title: string, content: string) => void;
 }
 
 type Step = "select_analysis" | "select_identifier" | "generating" | "idle";
 
-export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults }) => {
+export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, onCreateRenduFromAI }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -37,13 +38,50 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults }
       setIsLocked(localStorage.getItem("iaAccessKey") !== "IA-PSYCHO-2026-XQW9");
     };
     window.addEventListener("recueilUpdated", handleStorageUpdate);
-    return () => window.removeEventListener("recueilUpdated", handleStorageUpdate);
+    
+    const handleSintesUpdate = () => {
+      setHideSintes(localStorage.getItem('results_hide_sintes') === 'true');
+    };
+    window.addEventListener("hideSintesChanged", handleSintesUpdate);
+    
+    const handleCheckedItemsUpdate = () => {
+      try {
+        const saved = localStorage.getItem('results_checked_items');
+        setCheckedItems(saved ? new Set(JSON.parse(saved)) : new Set());
+      } catch {
+        setCheckedItems(new Set());
+      }
+    };
+    window.addEventListener("checkedItemsChanged", handleCheckedItemsUpdate);
+    
+    return () => {
+      window.removeEventListener("recueilUpdated", handleStorageUpdate);
+      window.removeEventListener("hideSintesChanged", handleSintesUpdate);
+      window.removeEventListener("checkedItemsChanged", handleCheckedItemsUpdate);
+    };
   }, []);
 
+  const [hideSintes, setHideSintes] = useState(() => {
+    return localStorage.getItem('results_hide_sintes') === 'true';
+  });
+
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('results_checked_items');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   // Filter analyses that are ready/identified
-  const readyAnalyses = scrapedResults.filter((r) =>
-    r.identifiers.some((id) => id.psychoFound || id.druglabFound)
-  );
+  const readyAnalyses = scrapedResults.filter((r) => {
+    const isReady = r.identifiers.some((id) => id.psychoFound || id.druglabFound);
+    if (!isReady) return false;
+    if (hideSintes && r.label?.toLowerCase().includes('sintes')) return false;
+    if (checkedItems.has(r.url)) return false;
+    return true;
+  });
 
   // Initialize conversation
   // biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount
@@ -196,10 +234,10 @@ ${template}
 Voici des informations de contexte supplémentaires provenant du recueil de l'utilisateur :
 ${recueilText}
 
-Voici des exemples de rendus rédigés précédemment par l'utilisateur. Rédigez le nouveau rendu dans le même style d'écriture (ton, rigueur, vocabulaire, mise en page BBCode) :
+Voici des exemples de rendus rédigés précédemment par l'utilisateur (le texte à imiter se trouve sous "Contenu:"). Rédigez le nouveau rendu dans le même style d'écriture (ton, rigueur, vocabulaire, mise en page BBCode) :
 ${userRendusText || "Aucun exemple disponible."}
 
-Rédigez uniquement le rendu final rempli en BBCode dans votre réponse, sans aucune phrase d'introduction ni de conclusion en dehors du BBCode.`;
+Rédigez UNIQUEMENT le contenu final rempli en BBCode (la partie "Contenu:" du modèle) dans votre réponse. N'incluez SURTOUT PAS les mentions "Titre:", "Substance:" ou "Contenu:", ni aucune phrase d'introduction ou de conclusion.`;
 
     // 6. Invoke call_gemini Tauri Command
     try {
@@ -307,6 +345,13 @@ Répondez à l'utilisateur de manière concise et pertinente. S'il vous demande 
     if (lastAgentMessage) {
       const bbcode = extractBBCode(lastAgentMessage.text);
       window.dispatchEvent(new CustomEvent("insertEditorText", { detail: bbcode }));
+    }
+  };
+
+  const handleCreateNewRendu = () => {
+    if (lastAgentMessage && onCreateRenduFromAI && selectedAnalysis) {
+      const bbcode = extractBBCode(lastAgentMessage.text);
+      onCreateRenduFromAI(selectedAnalysis.title, bbcode);
     }
   };
 
@@ -442,15 +487,23 @@ Répondez à l'utilisateur de manière concise et pertinente. S'il vous demande 
         <div ref={chatEndRef} />
       </div>
 
-      {/* BBCode Injection Button */}
+      {/* BBCode Injection Buttons */}
       {lastAgentMessage && currentStep === "idle" && (
-        <div className="p-2 border-t border-border-main bg-accent/5 flex items-center justify-center shrink-0">
+        <div className="p-2 border-t border-border-main bg-accent/5 flex flex-col gap-1.5 shrink-0">
           <button
             type="button"
             onClick={handleInject}
-            className="text-[10px] font-bold text-accent hover:text-accent-hover hover:underline transition-colors flex items-center gap-1"
+            className="text-[10px] py-1.5 px-2 bg-chrome-bg border border-border-main rounded font-bold text-fg-main hover:text-accent hover:border-accent transition-colors flex items-center justify-center gap-1"
           >
-            <span>✨ Injecter le BBCode généré dans l'éditeur</span>
+            <span>✨ Injecter dans le document actuel</span>
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleCreateNewRendu}
+            className="text-[10px] py-1.5 px-2 bg-accent/10 border border-accent/20 rounded font-bold text-accent hover:bg-accent/20 transition-colors flex items-center justify-center gap-1"
+          >
+            <span>📄 Créer un nouveau Rendu avec ce texte</span>
           </button>
         </div>
       )}
