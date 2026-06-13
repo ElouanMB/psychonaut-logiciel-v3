@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "./components/Header";
+import { version } from "../package.json";
 import { Sidebar } from "./components/Sidebar";
 import { EditorArea } from "./components/EditorArea";
 import { AgentPanel } from "./components/AgentPanel";
@@ -179,10 +180,16 @@ export default function App() {
     load();
   }, []);
 
+  const toastTimeoutRef = useRef<any>(null);
+
   const showToast = useCallback((message: string, type: "success" | "info" | "error" = "success") => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToast({ message, type, visible: true });
-    setTimeout(() => {
+    toastTimeoutRef.current = setTimeout(() => {
       setToast((prev) => ({ ...prev, visible: false }));
+      toastTimeoutRef.current = null;
     }, 3500);
   }, []);
 
@@ -192,13 +199,40 @@ export default function App() {
         const update = await check();
         if (update) {
           if (window.confirm(`Une nouvelle mise à jour (${update.version}) est disponible !\n\nVoulez-vous la télécharger et l'installer maintenant ?\n\nNotes :\n${update.body || 'Corrections de bugs et améliorations.'}`)) {
-            showToast("Téléchargement de la mise à jour en cours...", "info");
-            await update.downloadAndInstall();
+            showToast("Démarrage du téléchargement...", "info");
+            
+            let downloaded = 0;
+            let contentLength = 0;
+            
+            await update.downloadAndInstall((event) => {
+              switch (event.event) {
+                case 'Started':
+                  contentLength = event.data.contentLength || 0;
+                  showToast(`Téléchargement de la mise à jour : 0%...`, "info");
+                  break;
+                case 'Progress':
+                  downloaded += event.data.chunkLength;
+                  if (contentLength) {
+                    const percentage = Math.round((downloaded / contentLength) * 100);
+                    const downloadedMb = (downloaded / (1024 * 1024)).toFixed(1);
+                    const totalMb = (contentLength / (1024 * 1024)).toFixed(1);
+                    showToast(`Téléchargement : ${percentage}% (${downloadedMb} Mo / ${totalMb} Mo)`, "info");
+                  } else {
+                    const downloadedMb = (downloaded / (1024 * 1024)).toFixed(1);
+                    showToast(`Téléchargement : ${downloadedMb} Mo`, "info");
+                  }
+                  break;
+                case 'Finished':
+                  showToast("Téléchargement terminé. Redémarrage de l'application...", "success");
+                  break;
+              }
+            });
             await relaunch();
           }
         }
       } catch (error) {
         console.error("Erreur lors de la vérification des mises à jour :", error);
+        showToast("Erreur lors de la mise à jour.", "error");
       }
     }
     
@@ -698,6 +732,9 @@ export default function App() {
           </div>
         )}
         <div className="flex-1" />
+        <div className="text-[10px] text-fg-muted font-mono select-all" title="Version du logiciel">
+          v{version}
+        </div>
       </footer>
 
       {/* 4. SETTINGS MODAL */}
