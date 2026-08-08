@@ -4,7 +4,6 @@ import { Folder, FileText, Link as LinkIcon, Plus, ChevronRight, Edit2, Trash2, 
 
 export function RecueilTab({ theme: _theme }: { theme: 'light' | 'dark' }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [apiKey, setApiKey] = useState(localStorage.getItem('recueilApiKey') || '');
   const [apiPassword, setApiPassword] = useState(localStorage.getItem('recueilApiPassword') || '');
   const [authError, setAuthError] = useState('');
 
@@ -32,7 +31,6 @@ export function RecueilTab({ theme: _theme }: { theme: 'light' | 'dark' }) {
 
   useEffect(() => {
     const handleUpdate = () => {
-      setApiKey(localStorage.getItem('recueilApiKey') || '');
       setApiPassword(localStorage.getItem('recueilApiPassword') || '');
     };
     window.addEventListener('recueilUpdated', handleUpdate);
@@ -40,12 +38,12 @@ export function RecueilTab({ theme: _theme }: { theme: 'light' | 'dark' }) {
   }, []);
 
   useEffect(() => {
-    if (apiKey && apiPassword) {
+    if (apiPassword) {
       checkAuthAndLoad();
     } else {
       setIsAuthenticated(false);
     }
-  }, [apiKey, apiPassword]);
+  }, [apiPassword]);
 
   const checkAuthAndLoad = async () => {
     setLoading(true);

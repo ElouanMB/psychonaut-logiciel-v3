@@ -1,7 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 
-const API_BASE_URL = 'http://217.154.15.49:3000/api';
-
 interface ApiOptions {
   method?: string;
   body?: any;
@@ -24,14 +22,28 @@ export interface ResourceItem {
   content?: string;
 }
 
+export function getApiBaseUrl(): string {
+  const rawUrl = localStorage.getItem('recueilServerUrl') || 'http://217.154.15.49:3000';
+  let baseUrl = rawUrl.trim();
+  if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+    baseUrl = `http://${baseUrl}`;
+  }
+  baseUrl = baseUrl.replace(/\/+$/, '');
+  if (!baseUrl.endsWith('/api')) {
+    baseUrl = `${baseUrl}/api`;
+  }
+  return baseUrl;
+}
+
 async function fetchApi(endpoint: string, options: ApiOptions = {}) {
-  const apiKey = localStorage.getItem('recueilApiKey') || '';
+  const baseUrl = getApiBaseUrl();
+  const apiKey = localStorage.getItem('recueilApiKey') || 'psychonaut-v3-key';
   const apiPassword = localStorage.getItem('recueilApiPassword') || '';
   const username = localStorage.getItem('xfUser') || localStorage.getItem('userDisplayName') || 'Anonymous';
 
   // On passe par Rust (reqwest) pour éviter le blocage Mixed Content de WebView2 en production
   return invoke<any>('recueil_fetch', {
-    url: `${API_BASE_URL}${endpoint}`,
+    url: `${baseUrl}${endpoint}`,
     method: options.method || 'GET',
     apiKey,
     apiPassword,

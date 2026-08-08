@@ -69,9 +69,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [recueilAuthError, setRecueilAuthError] = useState(false);
 
   const fetchRecueil = async () => {
-    const apiKey = localStorage.getItem('recueilApiKey');
     const apiPassword = localStorage.getItem('recueilApiPassword');
-    if (apiKey && apiPassword) {
+    if (apiPassword) {
       try {
         setLoadingRecueil(true);
         setRecueilAuthError(false);

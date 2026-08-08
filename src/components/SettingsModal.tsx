@@ -13,7 +13,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [xfPass, setXfPass] = useState(() => localStorage.getItem('xfPass') || "");
 
 
-  const [recueilApiKey, setRecueilApiKey] = useState(() => localStorage.getItem('recueilApiKey') || "");
+  const [recueilServerUrl, setRecueilServerUrl] = useState(() => localStorage.getItem('recueilServerUrl') || "http://217.154.15.49:3000");
   const [recueilApiPassword, setRecueilApiPassword] = useState(() => localStorage.getItem('recueilApiPassword') || "");
   const [iaAccessKey, setIaAccessKey] = useState(() => localStorage.getItem('iaAccessKey') || "");
 
@@ -56,10 +56,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     setRecueilStatus("none");
     setRecueilErrorMsg("");
     
-    const oldKey = localStorage.getItem('recueilApiKey');
+    const oldUrl = localStorage.getItem('recueilServerUrl');
     const oldPass = localStorage.getItem('recueilApiPassword');
     
-    localStorage.setItem('recueilApiKey', recueilApiKey);
+    localStorage.setItem('recueilServerUrl', recueilServerUrl);
     localStorage.setItem('recueilApiPassword', recueilApiPassword);
     
     try {
@@ -70,7 +70,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
       // invoke() de Tauri rejette avec une string, pas un Error object
       setRecueilErrorMsg(err?.message || String(err) || "Erreur de connexion");
       
-      if (oldKey !== null) localStorage.setItem('recueilApiKey', oldKey);
+      if (oldUrl !== null) localStorage.setItem('recueilServerUrl', oldUrl);
       if (oldPass !== null) localStorage.setItem('recueilApiPassword', oldPass);
     } finally {
       setTestingRecueil(false);
@@ -80,7 +80,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const handleSave = () => {
     localStorage.setItem('xfUser', xfUser);
     localStorage.setItem('xfPass', xfPass);
-    localStorage.setItem('recueilApiKey', recueilApiKey);
+    localStorage.setItem('recueilServerUrl', recueilServerUrl);
     localStorage.setItem('recueilApiPassword', recueilApiPassword);
     localStorage.setItem('iaAccessKey', iaAccessKey);
     window.dispatchEvent(new CustomEvent('recueilUpdated'));
@@ -163,12 +163,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label htmlFor="recueil-key" className="block text-[10px] font-semibold text-fg-muted mb-1">Clé API</label>
+                <label htmlFor="recueil-server" className="block text-[10px] font-semibold text-fg-muted mb-1">Adresse IP / Serveur</label>
                 <input
-                  id="recueil-key"
+                  id="recueil-server"
                   type="text"
-                  value={recueilApiKey}
-                  onChange={(e) => setRecueilApiKey(e.target.value)}
+                  value={recueilServerUrl}
+                  onChange={(e) => setRecueilServerUrl(e.target.value)}
+                  placeholder="http://217.154.15.49:3000"
                   className="w-full bg-input-bg border border-input-border text-fg-main text-xs px-3 py-1.5 rounded outline-none focus:border-border-accent transition-all font-medium font-mono"
                 />
               </div>

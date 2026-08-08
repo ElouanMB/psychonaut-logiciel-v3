@@ -189,9 +189,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
 
     // 3. Fetch recueil
     let recueilText = "Aucune information disponible dans le recueil.";
-    const apiKey = localStorage.getItem("recueilApiKey");
     const apiPassword = localStorage.getItem("recueilApiPassword");
-    if (apiKey && apiPassword) {
+    if (apiPassword) {
       try {
         const folders = await recueilApi.getResources();
         const folderTexts: string[] = [];
