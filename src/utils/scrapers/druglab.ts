@@ -1,11 +1,11 @@
-import { fetch } from '@tauri-apps/plugin-http';
+import { httpGetText } from './http';
 import type { ScrapedResultDetails } from './types';
 
 export async function scrapeDruglabDetails(url: string): Promise<ScrapedResultDetails | null> {
   try {
-    const res = await fetch(url, { method: 'GET' });
+    const res = await httpGetText(url);
     if (!res.ok) return null;
-    const html = await res.text();
+    const html = res.text;
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
 

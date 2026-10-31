@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X, Shield, Check, RefreshCw, XCircle, Database } from "lucide-react";
 import { loginToPsychonaut } from "../utils/scraper";
-import { recueilApi } from "../utils/recueilApi";
+import { recueilApi, getRecueilServerUrl, DEFAULT_RECUEIL_SERVER_URL } from "../utils/recueilApi";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -13,7 +13,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [xfPass, setXfPass] = useState(() => localStorage.getItem('xfPass') || "");
 
 
-  const [recueilServerUrl, setRecueilServerUrl] = useState(() => localStorage.getItem('recueilServerUrl') || "http://217.154.15.49:3000");
+  const [recueilServerUrl, setRecueilServerUrl] = useState(() => getRecueilServerUrl());
   const [recueilApiPassword, setRecueilApiPassword] = useState(() => localStorage.getItem('recueilApiPassword') || "");
   const [iaAccessKey, setIaAccessKey] = useState(() => localStorage.getItem('iaAccessKey') || "");
 
@@ -59,9 +59,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     const oldUrl = localStorage.getItem('recueilServerUrl');
     const oldPass = localStorage.getItem('recueilApiPassword');
     
-    localStorage.setItem('recueilServerUrl', recueilServerUrl);
-    localStorage.setItem('recueilApiPassword', recueilApiPassword);
-    
+    localStorage.setItem('recueilServerUrl', recueilServerUrl.trim());
+    localStorage.setItem('recueilApiPassword', recueilApiPassword.trim());
+
     try {
       await recueilApi.getResources();
       setRecueilStatus("success");
@@ -80,9 +80,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const handleSave = () => {
     localStorage.setItem('xfUser', xfUser);
     localStorage.setItem('xfPass', xfPass);
-    localStorage.setItem('recueilServerUrl', recueilServerUrl);
-    localStorage.setItem('recueilApiPassword', recueilApiPassword);
-    localStorage.setItem('iaAccessKey', iaAccessKey);
+    localStorage.setItem('recueilServerUrl', recueilServerUrl.trim());
+    localStorage.setItem('recueilApiPassword', recueilApiPassword.trim());
+    localStorage.setItem('iaAccessKey', iaAccessKey.trim());
     window.dispatchEvent(new CustomEvent('recueilUpdated'));
     onClose();
   };
@@ -169,7 +169,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   type="text"
                   value={recueilServerUrl}
                   onChange={(e) => setRecueilServerUrl(e.target.value)}
-                  placeholder="http://217.154.15.49:3000"
+                  placeholder={DEFAULT_RECUEIL_SERVER_URL}
                   className="w-full bg-input-bg border border-input-border text-fg-main text-xs px-3 py-1.5 rounded outline-none focus:border-border-accent transition-all font-medium font-mono"
                 />
               </div>

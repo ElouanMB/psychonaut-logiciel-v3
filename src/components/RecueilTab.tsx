@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { recueilApi, Resource, ResourceItem } from '../utils/recueilApi';
 import { Folder, FileText, Link as LinkIcon, Plus, ChevronRight, Edit2, Trash2, ArrowLeft } from 'lucide-react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 
 export function RecueilTab({ theme: _theme }: { theme: 'light' | 'dark' }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -423,7 +424,15 @@ export function RecueilTab({ theme: _theme }: { theme: 'light' | 'dark' }) {
                           
                           {item.type === 'link' && (
                             <div className="mt-1 flex items-center gap-3">
-                              <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline break-all">
+                              <a
+                                href={item.url}
+                                onClick={(e) => {
+                                  // Ouvre dans le navigateur du système (les liens _blank ne sortent pas de la webview Tauri)
+                                  e.preventDefault();
+                                  if (item.url && /^https?:\/\//i.test(item.url)) openUrl(item.url).catch(console.error);
+                                }}
+                                className="text-sm text-blue-500 hover:underline break-all"
+                              >
                                 {item.url}
                               </a>
                               <span className="text-xs bg-border-main px-2 py-0.5 rounded-full font-medium text-fg-secondary uppercase">

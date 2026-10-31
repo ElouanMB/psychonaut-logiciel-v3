@@ -1,27 +1,42 @@
-import { fetch } from '@tauri-apps/plugin-http';
 import type { AnalysisResult, EnrichedIdentifier } from './types';
+import { httpGetText, errorMessage, normalizeIsoDate } from './http';
 
 export const psychoBase = 'https://www.psychoactif.org';
 export const druglabBase = 'https://druglab.fr';
 export const psychonautBase = 'https://www.psychonaut.fr';
 
+export function druglabResultUrl(canonical: string): string {
+  return `${druglabBase}/echantillon/${encodeURIComponent(canonical)}/`;
+}
+
+export function psychoactifResultUrl(canonical: string): string {
+  return `${psychoBase}/forum/analyse-a-distance.php?identification=${encodeURIComponent(canonical)}#divid`;
+}
+
+// Messages d'erreur XenForo (le forum est en français, on garde l'anglais au cas où)
+const LOGIN_ERROR_PATTERNS = [
+  /mot de passe incorrect/i,
+  /n'a pu .{0,3}tre trouv/i,
+  /Incorrect password/i,
+  /requested user could not be found/i,
+];
+
 export async function loginToPsychonaut(user?: string, pass?: string): Promise<{ success: boolean; username?: string; avatar?: string; error?: string }> {
   const username = user || localStorage.getItem('xfUser');
   const password = pass || localStorage.getItem('xfPass');
-  
+
   if (!username || !password) {
     return { success: false, error: 'Identifiants manquants' };
   }
 
   try {
-    const loginPageRes = await fetch(`${psychonautBase}/login/`, { method: 'GET' });
-    const loginPageHtml = await loginPageRes.text();
+    const loginPage = await httpGetText(`${psychonautBase}/login/`);
     const parser = new DOMParser();
-    let doc = parser.parseFromString(loginPageHtml, 'text/html');
+    let doc = parser.parseFromString(loginPage.text, 'text/html');
     const tokenInput = doc.querySelector('input[name="_xfToken"]') as HTMLInputElement;
     const token = tokenInput ? tokenInput.value : '';
 
-    if (!token) return { success: false, error: 'Token CSRF introuvable' };
+    if (!token) return { success: false, error: `Token CSRF introuvable (HTTP ${loginPage.status})` };
 
     const formData = new URLSearchParams();
     formData.append('login', username);
@@ -30,7 +45,7 @@ export async function loginToPsychonaut(user?: string, pass?: string): Promise<{
     formData.append('_xfToken', token);
     formData.append('_xfRedirect', '/');
 
-    const loginRes = await fetch(`${psychonautBase}/login/login`, {
+    const loginRes = await httpGetText(`${psychonautBase}/login/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -38,18 +53,16 @@ export async function loginToPsychonaut(user?: string, pass?: string): Promise<{
       body: formData.toString()
     });
 
-    const loginResText = await loginRes.text();
-    if (loginResText.includes('Incorrect password') || loginResText.includes('The requested user could not be found')) {
+    if (LOGIN_ERROR_PATTERNS.some((re) => re.test(loginRes.text))) {
       return { success: false, error: 'Identifiants incorrects' };
     }
 
-    const profileRes = await fetch(`${psychonautBase}/account/`, { method: 'GET' });
-    if (profileRes.status === 302 || profileRes.url.includes('/login/')) {
+    const profileRes = await httpGetText(`${psychonautBase}/account/`);
+    if (profileRes.status === 302 || profileRes.url.includes('/login')) {
        return { success: false, error: 'Connexion échouée' };
     }
 
-    const profileHtml = await profileRes.text();
-    doc = parser.parseFromString(profileHtml, 'text/html');
+    doc = parser.parseFromString(profileRes.text, 'text/html');
 
     const nameEl = doc.querySelector('.p-navgroup-link--user .p-navgroup-linkText');
     const displayName = nameEl ? nameEl.textContent?.trim() : username;
@@ -66,7 +79,7 @@ export async function loginToPsychonaut(user?: string, pass?: string): Promise<{
     return { success: true, username: displayName || username, avatar };
   } catch (e) {
     console.error('Login error', e);
-    return { success: false, error: e instanceof Error ? e.message : String(e) };
+    return { success: false, error: errorMessage(e) };
   }
 }
 
@@ -79,31 +92,73 @@ interface ParsedThread {
   identifiers: { raw: string; canonical: string }[];
 }
 
+export async function checkIdentifier(id: { raw: string; canonical: string }): Promise<EnrichedIdentifier> {
+  const isDruglab = /^\d{4}-\d{3,6}$/.test(id.canonical);
+
+  if (isDruglab) {
+    const dlUrl = druglabResultUrl(id.canonical);
+    try {
+      const res = await httpGetText(dlUrl);
+      if (res.ok) return { ...id, druglabUrl: dlUrl, druglabFound: true };
+      // 404 = résultat pas encore publié ; tout autre code est une vraie erreur
+      return { ...id, druglabUrl: dlUrl, druglabFound: false, ...(res.status !== 404 ? { checkError: `DrugLab HTTP ${res.status}` } : {}) };
+    } catch (e) {
+      return { ...id, druglabUrl: dlUrl, druglabFound: false, checkError: `DrugLab : ${errorMessage(e)}` };
+    }
+  }
+
+  const first = await checkPsychoactif(id);
+  if (first.psychoFound || first.checkError || !hasGuessedPrefix(id)) return first;
+
+  // Numéro sans préfixe et rien en PSYCHO : on essaie les autres séries
+  const digits = id.canonical.replace(/^\D+/, '');
+  for (const prefix of PSYCHOACTIF_PREFIXES.filter((p) => p !== 'PSYCHO')) {
+    const alt = await checkPsychoactif({ raw: id.raw, canonical: `${prefix}${digits}` });
+    if (alt.psychoFound) return alt;
+  }
+  return first;
+}
+
+async function checkPsychoactif(id: { raw: string; canonical: string }): Promise<EnrichedIdentifier> {
+  const psyUrl = psychoactifResultUrl(id.canonical);
+  try {
+    const res = await httpGetText(psyUrl);
+    if (!res.ok) {
+      return { ...id, psychoUrl: psyUrl, psychoFound: false, checkError: `Psychoactif HTTP ${res.status}` };
+    }
+    const html = res.text;
+    const found = !/Il semble qu'il n'y ai[t]? pas encore de r.sultat/i.test(html) &&
+        (/R.sultats de l'analyse/.test(html) || /Mol.cule attendue/.test(html));
+    return { ...id, psychoUrl: psyUrl, psychoFound: found };
+  } catch (e) {
+    return { ...id, psychoUrl: psyUrl, psychoFound: false, checkError: `Psychoactif : ${errorMessage(e)}` };
+  }
+}
+
 export async function scrapeForum(pages: number = 1, onProgress?: (p: number) => void): Promise<AnalysisResult[]> {
   if (onProgress) onProgress(0);
 
-  await loginToPsychonaut();
+  // Le forum "Demandes" est privé : sans connexion valide, la liste serait vide sans aucune erreur.
+  const login = await loginToPsychonaut();
+  if (!login.success) {
+    throw new Error(`connexion au forum impossible (${login.error}). Vérifiez vos identifiants dans les paramètres.`);
+  }
 
   const forumPath = '/forums/demandes.160/';
   const threads: ParsedThread[] = [];
 
-  const firstPageRes = await fetch(`${psychonautBase}${forumPath}`, {
-    method: 'GET',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
-  });
-  
-  if (!firstPageRes.ok) {
-    throw new Error(`Failed to fetch forum: ${firstPageRes.statusText}`);
-  }
-  
-  const firstPageHtml = await firstPageRes.text();
-  const parser = new DOMParser();
-  const firstDoc = parser.parseFromString(firstPageHtml, 'text/html');
+  const firstPage = await httpGetText(`${psychonautBase}${forumPath}`);
 
+  if (!firstPage.ok) {
+    throw new Error(`Failed to fetch forum: HTTP ${firstPage.status} ${firstPage.statusText}`);
+  }
+
+  const parser = new DOMParser();
+  const firstDoc = parser.parseFromString(firstPage.text, 'text/html');
+
+  // Uniquement la pagination du forum (les liens "page-N" des sujets eux-mêmes faussaient le total)
   let maxPage = 1;
-  firstDoc.querySelectorAll('a[href*="/page-"]').forEach((a) => {
+  firstDoc.querySelectorAll(`a[href*="${forumPath}page-"]`).forEach((a) => {
     const href = a.getAttribute('href') || '';
     const m = href.match(/\/page-(\d+)/);
     if (m) {
@@ -114,64 +169,72 @@ export async function scrapeForum(pages: number = 1, onProgress?: (p: number) =>
   const endPage = pages > 0 ? Math.min(pages, maxPage) : maxPage;
   threads.push(...parseThreads(firstDoc));
 
+  if (firstDoc.querySelectorAll('.structItem--thread').length === 0) {
+    throw new Error("aucun sujet visible dans le forum Demandes (accès refusé pour ce compte ?)");
+  }
+
   for (let i = 2; i <= endPage; i++) {
-    const htmlRes = await fetch(`${psychonautBase}${forumPath}page-${i}`);
-    if (htmlRes.ok) {
-      const html = await htmlRes.text();
-      const doc = parser.parseFromString(html, 'text/html');
-      threads.push(...parseThreads(doc));
+    try {
+      const page = await httpGetText(`${psychonautBase}${forumPath}page-${i}`);
+      if (page.ok) {
+        const doc = parser.parseFromString(page.text, 'text/html');
+        threads.push(...parseThreads(doc));
+      }
+    } catch (e) {
+      console.warn(`Page ${i} du forum ignorée :`, e);
     }
     if (onProgress) onProgress(10 + Math.floor((i / endPage) * 20));
   }
 
-  const results: AnalysisResult[] = [];
+  // Un sujet peut apparaître sur deux pages si la liste bouge pendant le scan
+  const seenUrls = new Set<string>();
+  const uniqueThreads = threads.filter((t) => {
+    if (seenUrls.has(t.url)) return false;
+    seenUrls.add(t.url);
+    return true;
+  });
 
-  for (let i = 0; i < threads.length; i++) {
-    const t = threads[i];
+  let done = 0;
+  const results = await mapWithConcurrency(uniqueThreads, CHECK_CONCURRENCY, async (t): Promise<AnalysisResult> => {
     const enriched: EnrichedIdentifier[] = [];
-
     for (const id of t.identifiers) {
-      const isDruglab = /^\d{4}-\d{3,6}$/.test(id.canonical);
-      
-      if (isDruglab) {
-        const dlUrl = `${druglabBase}/resultats/${encodeURIComponent(id.canonical)}`;
-        try {
-          const res = await fetch(dlUrl, { method: 'GET' });
-          enriched.push({ ...id, druglabUrl: dlUrl, druglabFound: res.status >= 200 && res.status < 300 });
-        } catch {
-          enriched.push({ ...id, druglabUrl: dlUrl, druglabFound: false });
-        }
-      } else {
-        const psyUrl = `${psychoBase}/forum/analyse-a-distance.php?identification=${encodeURIComponent(id.canonical)}#divid`;
-        try {
-          const res = await fetch(psyUrl, { method: 'GET' });
-          const html = await res.text();
-          const found = !/Il semble qu'il n'y ai pas encore de résultat/i.test(html) &&
-              (html.includes("Résultats de l'analyse") || html.includes('Molécule attendue'));
-          enriched.push({ ...id, psychoUrl: psyUrl, psychoFound: found });
-        } catch {
-          enriched.push({ ...id, psychoUrl: psyUrl, psychoFound: false });
-        }
-      }
+      enriched.push(await checkIdentifier(id));
     }
 
-    results.push({
+    done++;
+    if (onProgress) onProgress(30 + Math.floor((done / uniqueThreads.length) * 70));
+
+    return {
       ...t,
       identifiers: enriched,
       ...(enriched.length === 0 ? { missingIdentifier: true } : {})
-    });
-
-    if (onProgress) onProgress(30 + Math.floor(((i + 1) / threads.length) * 70));
-  }
+    };
+  });
 
   if (onProgress) onProgress(100);
+  return results;
+}
+
+// Vérifications en parallèle, en nombre limité pour ne pas se faire bloquer par Psychoactif / DrugLab
+const CHECK_CONCURRENCY = 4;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
 }
 
 function parseThreads(doc: Document): ParsedThread[] {
   const arr: ParsedThread[] = [];
   const items = doc.querySelectorAll('.structItem.structItem--thread');
-  
+
   items.forEach((el) => {
     let titleEl = el.querySelector('.structItem-title a[data-tp-primary="on"]');
     if (!titleEl) {
@@ -193,7 +256,7 @@ function parseThreads(doc: Document): ParsedThread[] {
     let createdAt = null;
     const timeEl = el.querySelector('.structItem-startDate time');
     if (timeEl) {
-      createdAt = timeEl.getAttribute('datetime') || null;
+      createdAt = normalizeIsoDate(timeEl.getAttribute('datetime'));
     }
 
     const isUtility = title.includes("Collecte mode d'emploi !") || title === "Sauvegardes";
@@ -205,7 +268,7 @@ function parseThreads(doc: Document): ParsedThread[] {
   return arr;
 }
 
-function extractIdentifiers(title: string) {
+export function extractIdentifiers(title: string) {
   const found: { raw: string; canonical: string }[] = [];
   const seen = new Set<string>();
 
@@ -220,46 +283,56 @@ function extractIdentifiers(title: string) {
   for (const match of title.matchAll(reDrug)) {
     add(match[0], match[2]);
   }
-
-  const rePsy = /PSY(?:CHO)?\s*(\d{5,7})/gi;
-  for (const match of title.matchAll(rePsy)) {
-    add(match[0].toUpperCase(), `PSYCHO${match[1]}`);
+  // PSYCHO, PSY et RDRAD sont trois séries distinctes sur Psychoactif : PSY254920 et PSYCHO254920
+  // sont deux échantillons différents, le préfixe doit donc être conservé tel quel.
+  const rePrefixed = /(PSYCHO|PSY|RDRAD)\s*-?\s*(\d{5,10})/gi;
+  for (const match of title.matchAll(rePrefixed)) {
+    add(match[0].toUpperCase(), `${match[1].toUpperCase()}${match[2]}`);
   }
 
-  const reInBr = /\[(\d{5,7})\]/g;
-  for (const match of title.matchAll(reInBr)) {
+  // On retire les identifiants déjà reconnus avant de chercher les numéros nus :
+  // sinon "2026-12345" produisait aussi un faux PSYCHO12345, et "RDRAD267949" un faux PSYCHO267949.
+  const rest = title.replace(reDrug, ' ').replace(rePrefixed, ' ');
+
+  // Numéros sans préfixe : PSYCHO par défaut, les autres séries sont essayées à la vérification
+  const reInBr = /\[(\d{5,8})\]/g;
+  for (const match of rest.matchAll(reInBr)) {
     add(`[${match[1]}]`, `PSYCHO${match[1]}`);
   }
 
-  const reBare = /\b(\d{5,7})\b/g;
-  for (const match of title.matchAll(reBare)) {
-    if (!/^\d{4}-/.test(match[1])) {
-      add(match[1], `PSYCHO${match[1]}`);
-    }
+  const reBare = /\b(\d{5,8})\b/g;
+  for (const match of rest.matchAll(reBare)) {
+    add(match[1], `PSYCHO${match[1]}`);
   }
 
   return found;
 }
 
+const PSYCHOACTIF_PREFIXES = ['PSYCHO', 'PSY', 'RDRAD'];
+
+/** Vrai si le titre ne donnait que le numéro (ex. "[266373]") : le préfixe PSYCHO a alors été supposé */
+function hasGuessedPrefix(id: { raw: string }): boolean {
+  return /^\[?\d+\]?$/.test(id.raw.trim());
+}
+
 export async function scrapePsychonautRequest(threadUrl: string): Promise<string | null> {
   try {
     const fullUrl = threadUrl.startsWith('http') ? threadUrl : `${psychonautBase}${threadUrl}`;
-    const res = await fetch(fullUrl, { method: 'GET' });
+    const res = await httpGetText(fullUrl);
     if (!res.ok) return null;
-    const html = await res.text();
     const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    const doc = parser.parseFromString(res.text, 'text/html');
     const firstPost = doc.querySelector('.message-body .bbWrapper');
     if (firstPost) {
       // Copy the node to avoid mutating the parsed DOM unnecessarily
       const clone = firstPost.cloneNode(true) as HTMLElement;
-      
+
       // Remove quotes to only get the original author's request
       clone.querySelectorAll('.bbCodeBlock--quote').forEach(quote => { quote.remove(); });
-      
+
       // Replace <br> with newlines to preserve formatting in textContent
       clone.querySelectorAll('br').forEach(br => { br.replaceWith('\n'); });
-      
+
       return clone.textContent?.trim() || null;
     }
     return null;
@@ -268,4 +341,3 @@ export async function scrapePsychonautRequest(threadUrl: string): Promise<string
     return null;
   }
 }
-

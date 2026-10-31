@@ -1,16 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { RenduItem, DraftItem } from "../data/mockData";
 
+/** Émis après chaque enregistrement / suppression locale d'un rendu (déclenche la synchronisation) */
+export const RENDUS_CHANGED_EVENT = "rendusChanged";
+
 /**
  * Détecte l'identifiant de l'analyse dans le titre ou le contenu.
  * Formats reconnus :
- * - "PSYCHO" suivi de chiffres (ex: PSYCHO266372)
+ * - "PSYCHO", "PSY" ou "RDRAD" suivi de chiffres (ex: PSYCHO266372, PSY04129312, RDRAD267949)
  * - Format "20xx-xxxx" (ex: 2026-1687)
  * - Une suite de chiffres d'au moins 5 caractères (ex: 266372)
  */
 export function extractAnalysisId(title: string, content: string): string | null {
-  // 1. "PSYCHO" (insensible à la casse) suivi d'une suite de chiffres
-  const psychoRegex = /psycho\d+/i;
+  // 1. "PSYCHO", "PSY" ou "RDRAD" (insensible à la casse) suivi d'une suite de chiffres
+  //    (trois séries distinctes : le préfixe est conservé)
+  const psychoRegex = /(?:psycho|psy|rdrad)\d+/i;
   let match = title.match(psychoRegex) || content.match(psychoRegex);
   if (match) {
     return match[0].toUpperCase();
@@ -49,6 +53,7 @@ export async function dbSaveRendu(rendu: RenduItem): Promise<void> {
     const analysisId = extractAnalysisId(rendu.title, rendu.content);
     const updatedRendu = { ...rendu, analysisId };
     await invoke("save_rendu", { item: updatedRendu });
+    window.dispatchEvent(new Event(RENDUS_CHANGED_EVENT));
   } catch (error) {
     console.error(`Erreur lors de la sauvegarde du rendu ${rendu.id} :`, error);
   }
@@ -65,6 +70,7 @@ export async function dbSaveDraft(draft: DraftItem): Promise<void> {
 export async function dbDeleteRendu(id: string): Promise<void> {
   try {
     await invoke("delete_rendu", { id });
+    window.dispatchEvent(new Event(RENDUS_CHANGED_EVENT));
   } catch (error) {
     console.error(`Erreur lors de la suppression du rendu ${id} :`, error);
   }

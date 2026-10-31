@@ -1,8 +1,8 @@
 import type React from "react";
 import { useState, useMemo } from "react";
-import { ClipboardList, CheckCircle2, Clock, Globe, ExternalLink, CheckSquare, Square, PenLine, Loader2 } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock, Globe, ExternalLink, CheckSquare, Square, PenLine, Loader2, AlertTriangle } from "lucide-react";
 import type { AnalysisResult, ScrapedResultDetails } from "../utils/scraper";
-import { scrapePsychoactifDetails, scrapeDruglabDetails } from "../utils/scraper";
+import { scrapePsychoactifDetails, scrapeDruglabDetails, parseDateSafe } from "../utils/scraper";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface ResultsTabProps {
@@ -39,11 +39,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
   };
 
   const sortedResults = useMemo(() => {
-    return [...scrapedResults].sort((a, b) => {
-      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      return dateB - dateA;
-    });
+    return [...scrapedResults].sort((a, b) => parseDateSafe(b.createdAt) - parseDateSafe(a.createdAt));
   }, [scrapedResults]);
 
   const filteredResults = useMemo(() => {
@@ -146,10 +142,15 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
     const firstPsychoUrl = item.identifiers.find(id => id.psychoUrl)?.psychoUrl;
     const firstDruglabUrl = item.identifiers.find(id => id.druglabUrl)?.druglabUrl;
     const hasDetailsUrl = firstPsychoUrl || firstDruglabUrl;
+    const createdAtMs = parseDateSafe(item.createdAt);
+    const checkErrors = item.identifiers
+      .filter(id => id.checkError)
+      .map(id => `${id.canonical} : ${id.checkError}`);
 
     return (
-      <div key={`${item.url}-${idx}`} className={`group flex flex-col p-2.5 border border-border-main/50 rounded-md transition-all duration-200 shadow-sm ${isChecked ? 'bg-chrome-bg/10 opacity-60' : 'bg-chrome-bg/30 hover:bg-chrome-bg'}`}>
-        <div className="flex items-center justify-between">
+      // @container : la mise en page suit la largeur réelle de la carte (barres latérales ouvertes, petits écrans)
+      <div key={`${item.url}-${idx}`} className={`@container group flex flex-col p-2.5 border border-border-main/50 rounded-md transition-all duration-200 shadow-sm ${isChecked ? 'bg-chrome-bg/10 opacity-60' : 'bg-chrome-bg/30 hover:bg-chrome-bg'}`}>
+        <div className="flex flex-col gap-2 @3xl:flex-row @3xl:items-center @3xl:justify-between">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             {isReady && (
               <button
@@ -163,7 +164,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
             )}
 
             {/* Tag (fixed width to align titles) */}
-            <div className="w-16 shrink-0 flex justify-center">
+            <div className="w-20 shrink-0 flex justify-center">
               {tag ? (
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${tag.bg} ${tag.text} ${tag.border} uppercase truncate max-w-full tracking-wider ${isChecked ? 'opacity-70' : ''}`}>
                   {tag.label}
@@ -181,24 +182,30 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
               <h4 className={`text-[13px] font-semibold text-fg-main truncate transition-colors ${isChecked ? 'line-through text-fg-muted' : (isReady ? 'group-hover:text-success' : 'group-hover:text-yellow-500')}`} title={item.title}>
                 {item.title}
               </h4>
-              <div className="flex items-center gap-2 text-[10px]">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0 text-[10px]">
                 <span className="text-fg-muted/70 whitespace-nowrap">
-                  {item.createdAt ? new Date(item.createdAt).toLocaleDateString("fr-FR", { year: 'numeric', month: 'short', day: 'numeric' }) : "Inconnu"}
+                  {createdAtMs ? new Date(createdAtMs).toLocaleDateString("fr-FR", { year: 'numeric', month: 'short', day: 'numeric' }) : "Inconnu"}
                 </span>
                 {item.identifiers && item.identifiers.length > 0 && (
                   <>
                     <span className="text-border-main/60">•</span>
-                    <span className="font-mono text-fg-secondary">
+                    <span className="font-mono text-fg-secondary truncate min-w-0">
                       {item.identifiers.map(id => id.canonical).join(", ")}
                     </span>
                   </>
+                )}
+                {checkErrors.length > 0 && (
+                  <span className="flex items-center gap-1 text-red-500 whitespace-nowrap" title={checkErrors.join("\n")}>
+                    <AlertTriangle className="w-3 h-3" />
+                    Vérification impossible
+                  </span>
                 )}
               </div>
             </button>
           </div>
 
-          {/* Actions (always slightly visible, fully visible on hover) */}
-          <div className="flex items-center gap-1.5 shrink-0 opacity-60 group-hover:opacity-100 transition-opacity ml-3">
+          {/* Actions (always slightly visible, fully visible on hover) — sous le titre si la carte est étroite */}
+          <div className="flex flex-wrap items-center justify-end gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity @3xl:shrink-0 @3xl:ml-3">
             {isReady && onCreateRenduFromResult && hasDetailsUrl && (
               <button
                 type="button"
@@ -208,7 +215,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
                 title="Rédiger le rendu"
               >
                 {isWritingId === item.url ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PenLine className="w-3.5 h-3.5" />}
-                <span className="hidden xl:inline">Rédiger</span>
+                <span>Rédiger</span>
               </button>
             )}
 
@@ -219,7 +226,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
               title="Demande"
             >
               <Globe className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">Demande</span>
+              <span>Demande</span>
             </button>
             
             {item.identifiers.map((id, index) => {
@@ -237,7 +244,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
                   title={`Résultat ${id.canonical}`}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span className="hidden xl:inline">
+                  <span>
                     Résultat {item.identifiers.length > 1 ? index + 1 : ""}
                   </span>
                 </button>
@@ -248,11 +255,11 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
         
         {/* Expanded details */}
         {isExpanded && hasDetailsUrl && (
-          <div className="mt-3 pt-3 border-t border-border-main/40 pl-[84px] text-xs">
+          <div className="mt-3 pt-3 border-t border-border-main/40 @xl:pl-[6.5rem] text-xs">
             {isLoadingDetails && !detailsCache[item.url] ? (
               <div className="text-fg-muted animate-pulse">Chargement des détails...</div>
             ) : detailsCache[item.url] ? (
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-fg-main bg-chrome-bg/40 p-3 rounded border border-border-main/30 shadow-inner">
+              <div className="grid grid-cols-1 @md:grid-cols-2 gap-x-4 gap-y-2 text-fg-main bg-chrome-bg/40 p-3 rounded border border-border-main/30 shadow-inner">
                 {detailsCache[item.url]!.collectDate && (
                   <div className="flex flex-col"><span className="text-[10px] uppercase text-fg-muted font-bold tracking-wider mb-0.5">Date de collecte</span><span>{detailsCache[item.url]!.collectDate}</span></div>
                 )}
@@ -326,8 +333,8 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
   };
 
   return (
-    <div className="flex-1 bg-editor-bg overflow-y-hidden p-6 select-none animate-in fade-in duration-300 flex flex-col">
-      <div className="w-full mx-auto flex flex-col gap-4 flex-1 min-h-0">
+    <div className="@container flex-1 bg-editor-bg overflow-y-hidden p-6 select-none animate-in fade-in duration-300 flex flex-col">
+      <div className="w-full mx-auto flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto @5xl:overflow-hidden">
         
         <div className="flex flex-col gap-1 border-b border-border-main/60 pb-3 shrink-0">
           <div className="flex items-center justify-between">
@@ -354,7 +361,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
           </div>
         </div>
 
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
+        <div className="grid grid-cols-1 gap-6 shrink-0 @5xl:shrink @5xl:flex-1 @5xl:grid-cols-2 @5xl:min-h-0">
           {/* Identified Section (Moved to the left) */}
           <section className="flex flex-col gap-3 min-h-0 bg-chrome-bg/10 rounded-lg p-3 border border-border-main/30">
             <div className="flex items-center justify-between shrink-0 px-1">
@@ -367,7 +374,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
               </h3>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
+            <div className="flex flex-col gap-2 @5xl:flex-1 @5xl:overflow-y-auto @5xl:pr-1">
               {identified.length === 0 ? (
                 <div className="p-6 border border-dashed border-border-main rounded-lg flex flex-col items-center justify-center text-center gap-2 bg-chrome-bg/30 h-full">
                   <CheckCircle2 className="w-6 h-6 text-fg-muted/30" />
@@ -391,7 +398,7 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
               </h3>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2">
+            <div className="flex flex-col gap-2 @5xl:flex-1 @5xl:overflow-y-auto @5xl:pr-1">
               {pending.length === 0 ? (
                 <div className="p-6 border border-dashed border-border-main rounded-lg flex flex-col items-center justify-center text-center gap-2 bg-chrome-bg/30 h-full">
                   <Clock className="w-6 h-6 text-fg-muted/30" />

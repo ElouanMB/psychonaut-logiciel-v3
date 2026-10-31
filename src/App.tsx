@@ -23,8 +23,10 @@ import {
   dbDeleteDraft,
   dbPublishToForum,
   extractAnalysisId,
+  RENDUS_CHANGED_EVENT,
 } from "./utils/db";
-import { scrapeForum, AnalysisResult, ScrapedResultDetails } from "./utils/scraper";
+import { scrapeForum, loginToPsychonaut, AnalysisResult, ScrapedResultDetails } from "./utils/scraper";
+import { syncRendus } from "./utils/sync";
 import { defaultTemplatePsychoactif, defaultTemplateDruglab } from "./utils/templates";
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
@@ -36,6 +38,25 @@ interface Tab {
   isDirty?: boolean;
   type?: "editor" | "results" | "recueil";
 }
+
+// Dates enregistrées au format fr-FR (jj/mm/aaaa) ou ISO
+const parseDate = (d: string) => {
+  if (!d) return 0;
+  if (d.includes("/")) {
+    const parts = d.split("/");
+    if (parts.length === 3) {
+      const [day, month, year] = parts;
+      return new Date(`${year}-${month}-${day}`).getTime();
+    }
+  }
+  const t = new Date(d).getTime();
+  return isNaN(t) ? 0 : t;
+};
+
+const newRenduId = () => `rendu-${crypto.randomUUID()}`;
+
+const SYNC_DEBOUNCE_MS = 4000;
+const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 interface Toast {
   message: string;
@@ -76,8 +97,12 @@ export default function App() {
   }, [isAgentOpen]);
   
   const [scrapedResults, setScrapedResults] = useState<AnalysisResult[]>(() => {
-    const saved = localStorage.getItem('scrapedResults');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('scrapedResults');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   // Core Lists
@@ -107,7 +132,9 @@ export default function App() {
   useEffect(() => {
     async function load() {
       const data = await dbLoadData();
-      if (data.rendus.length === 0 && data.drafts.length === 0) {
+      // Base vide et aucun compte configuré : premier lancement, on montre des exemples.
+      // Avec un compte, les vrais rendus arrivent par la synchronisation.
+      if (data.rendus.length === 0 && data.drafts.length === 0 && !localStorage.getItem("xfUser")) {
         // La base de données est vide, on l'initialise avec les données mockées
         for (const r of initialRendus) {
           await dbSaveRendu(r);
@@ -135,19 +162,6 @@ export default function App() {
         ]);
         setActiveTabId(initialRendus[0].id);
       } else {
-        const parseDate = (d: string) => {
-          if (!d) return 0;
-          if (d.includes("/")) {
-            const parts = d.split("/");
-            if (parts.length === 3) {
-              const [day, month, year] = parts;
-              return new Date(`${year}-${month}-${day}`).getTime();
-            }
-          }
-          const t = new Date(d).getTime();
-          return isNaN(t) ? 0 : t;
-        };
-
         const sortedRendus = [...data.rendus].sort((a, b) => parseDate(b.date) - parseDate(a.date));
         const sortedDrafts = [...data.drafts].sort((a, b) => parseDate(b.date) - parseDate(a.date));
 
@@ -176,9 +190,93 @@ export default function App() {
           setActiveTabId(sortedDrafts[0].id);
         }
       }
+      setDbLoaded(true);
     }
     load();
   }, []);
+
+  // ── Synchronisation des rendus avec le serveur (multi-appareils) ──
+  const [dbLoaded, setDbLoaded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ state: "off" | "syncing" | "ok" | "error"; message: string }>({
+    state: "off",
+    message: "",
+  });
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  // Recharge la liste depuis la base locale après une synchro, sans écraser un rendu en cours d'édition
+  const reloadRendusFromDb = useCallback(async () => {
+    const data = await dbLoadData();
+    const dirtyIds = new Set(tabsRef.current.filter((t) => t.isDirty).map((t) => t.id));
+    const fromDb = new Map(data.rendus.map((r) => [r.id, r]));
+
+    setRendus((prev) => {
+      const keptDirty = prev.filter((r) => dirtyIds.has(r.id));
+      const others = data.rendus.filter((r) => !dirtyIds.has(r.id));
+      return [...keptDirty, ...others].sort((a, b) => parseDate(b.date) - parseDate(a.date));
+    });
+    setTabs((prev) =>
+      prev.map((t) => {
+        const r = fromDb.get(t.id);
+        return r && !t.isDirty ? { ...t, title: r.title, content: r.content, status: r.status } : t;
+      })
+    );
+  }, []);
+
+  const runSync = useCallback(async () => {
+    setSyncStatus((s) => (s.state === "off" ? s : { ...s, state: "syncing" }));
+    try {
+      const result = await syncRendus();
+      if (!result) {
+        setSyncStatus({ state: "off", message: "Synchro désactivée : connectez-vous au forum et au Recueil dans les paramètres" });
+        return;
+      }
+      if (result.pulled > 0) await reloadRendusFromDb();
+      const time = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      setSyncStatus({ state: "ok", message: `Rendus synchronisés à ${time}` });
+    } catch (e) {
+      console.error("Synchronisation des rendus impossible :", e);
+      setSyncStatus({ state: "error", message: `Synchro des rendus impossible : ${e instanceof Error ? e.message : String(e)}` });
+    }
+  }, [reloadRendusFromDb]);
+
+  useEffect(() => {
+    if (!dbLoaded) return;
+
+    // Le propriétaire des rendus est le nom du compte forum renvoyé par la connexion :
+    // on le récupère une fois si les identifiants ont été enregistrés sans « Tester la connexion ».
+    (async () => {
+      if (!localStorage.getItem("userDisplayName") && localStorage.getItem("xfUser") && localStorage.getItem("xfPass")) {
+        const login = await loginToPsychonaut();
+        if (login.success && login.username) {
+          localStorage.setItem("userDisplayName", login.username);
+          localStorage.setItem("userAvatar", login.avatar || "");
+          window.dispatchEvent(new Event("userProfileUpdated"));
+        }
+      }
+      runSync();
+    })();
+
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const scheduleSync = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(runSync, SYNC_DEBOUNCE_MS);
+    };
+    window.addEventListener(RENDUS_CHANGED_EVENT, scheduleSync);
+    window.addEventListener("recueilUpdated", scheduleSync);
+    window.addEventListener("userProfileUpdated", scheduleSync);
+    const interval = setInterval(runSync, SYNC_INTERVAL_MS);
+
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      window.removeEventListener(RENDUS_CHANGED_EVENT, scheduleSync);
+      window.removeEventListener("recueilUpdated", scheduleSync);
+      window.removeEventListener("userProfileUpdated", scheduleSync);
+      clearInterval(interval);
+    };
+  }, [dbLoaded, runSync]);
 
   const toastTimeoutRef = useRef<any>(null);
 
@@ -303,7 +401,7 @@ export default function App() {
 
   // Creation buttons
   const handleCreateRendu = async () => {
-    const newId = `PSYCHO-${Math.floor(100000 + Math.random() * 900000)}`;
+    const newId = newRenduId();
     const newItem: RenduItem = {
       id: newId,
       title: "Nouveau Rendu",
@@ -311,7 +409,7 @@ export default function App() {
       status: "EN_ATTENTE",
       substance: "Substance",
       content: "",
-      analysisId: newId,
+      analysisId: null,
     };
     await dbSaveRendu(newItem);
     setRendus((prev) => [newItem, ...prev]);
@@ -320,7 +418,7 @@ export default function App() {
   };
 
   const handleCreateRenduFromResult = async (item: AnalysisResult, details: ScrapedResultDetails) => {
-    const newId = `PSYCHO-${Math.floor(100000 + Math.random() * 900000)}`;
+    const newId = newRenduId();
     let content = "";
     
     if (details.type === 'psychoactif') {
@@ -360,7 +458,7 @@ export default function App() {
       status: "EN_ATTENTE",
       substance: details.expectedProduct || "Substance",
       content: content,
-      analysisId: newId,
+      analysisId: extractAnalysisId(item.title, content),
     };
 
     await dbSaveRendu(newItem);
@@ -370,7 +468,7 @@ export default function App() {
   };
 
   const handleCreateRenduFromAI = async (title: string, content: string) => {
-    const newId = `PSYCHO-${Math.floor(100000 + Math.random() * 900000)}`;
+    const newId = newRenduId();
     const newItem: RenduItem = {
       id: newId,
       title: title,
@@ -378,7 +476,7 @@ export default function App() {
       status: "EN_ATTENTE",
       substance: "Substance",
       content: content,
-      analysisId: newId,
+      analysisId: extractAnalysisId(title, content),
     };
     await dbSaveRendu(newItem);
     setRendus((prev) => [newItem, ...prev]);
@@ -575,12 +673,24 @@ export default function App() {
     try {
       const url = `https://www.psychonaut.fr/forums/resultats.161/post-thread?title=${encodeURIComponent(tab.title)}&prefix_id=6`;
 
-      // Copier le contenu dans le presse-papiers car nous ne pouvons plus l'injecter 
-      // directement dans un navigateur externe via Tauri
-      await navigator.clipboard.writeText(tab.content);
+      // Copier le contenu dans le presse-papiers car nous ne pouvons plus l'injecter
+      // directement dans un navigateur externe via Tauri.
+      // L'API Clipboard peut être refusée (WebKitGTK sous Linux) : on ouvre le forum quand même.
+      let copied = true;
+      try {
+        await navigator.clipboard.writeText(tab.content);
+      } catch (clipboardError) {
+        console.warn("Copie dans le presse-papiers impossible :", clipboardError);
+        copied = false;
+      }
 
       await dbPublishToForum(url);
-      showToast("Contenu copié ! Collez-le (Ctrl+V) sur le forum.", "info");
+      showToast(
+        copied
+          ? "Contenu copié ! Collez-le (Ctrl+V) sur le forum."
+          : "Forum ouvert, mais la copie automatique a échoué : copiez le texte manuellement (Ctrl+A, Ctrl+C).",
+        copied ? "info" : "error"
+      );
 
       // Marquer le rendu comme PRÊT
       setRendus((prev) =>
@@ -603,7 +713,8 @@ export default function App() {
     if (window.confirm("Êtes-vous sûr de vouloir supprimer ce rendu d'analyse définitivement ?")) {
       await dbDeleteRendu(id);
       setRendus((prev) => prev.filter((r) => r.id !== id));
-      handleCloseTab(id);
+      // Fermeture directe : passer par handleCloseTab proposait d'« enregistrer » et recréait le rendu supprimé
+      performCloseTab(id);
       showToast("Rendu supprimé avec succès.", "info");
     }
   };
@@ -612,7 +723,7 @@ export default function App() {
     if (window.confirm("Êtes-vous sûr de vouloir supprimer ce brouillon définitivement ?")) {
       await dbDeleteDraft(id);
       setDrafts((prev) => prev.filter((d) => d.id !== id));
-      handleCloseTab(id);
+      performCloseTab(id);
       showToast("Brouillon supprimé.", "info");
     }
   };
@@ -732,6 +843,18 @@ export default function App() {
           </div>
         )}
         <div className="flex-1" />
+        {syncStatus.message && (
+          <button
+            type="button"
+            onClick={runSync}
+            disabled={syncStatus.state === "syncing"}
+            title={`${syncStatus.message}\n(cliquer pour synchroniser maintenant)`}
+            className={`flex items-center gap-1.5 text-[10px] max-w-[40%] truncate transition-colors hover:text-accent ${syncStatus.state === "error" ? "text-red-500" : "text-fg-muted"}`}
+          >
+            <RefreshCw className={`w-3 h-3 shrink-0 ${syncStatus.state === "syncing" ? "animate-spin text-accent" : ""}`} />
+            <span className="truncate">{syncStatus.state === "syncing" ? "Synchronisation des rendus…" : syncStatus.message}</span>
+          </button>
+        )}
         <div className="text-[10px] text-fg-muted font-mono select-all" title="Version du logiciel">
           v{version}
         </div>

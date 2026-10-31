@@ -4,11 +4,23 @@
 export function parseBBCode(text: string): string {
   if (!text) return "";
 
-  // Escape HTML entities to prevent XSS in preview
+  // Escape HTML entities to prevent XSS in preview (quotes too: values end up inside attributes)
   let html = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+  // Strip optional quotes around tag values: [URL='...'] / [COLOR="..."]
+  const unquote = (v: string) => v.trim().replace(/^(&quot;|')(.*)(&quot;|')$/, "$2");
+  const safeUrl = (v: string) => {
+    const url = unquote(v);
+    return /^(https?:\/\/|mailto:)/i.test(url) ? url : "#";
+  };
+  const safeColor = (v: string) => {
+    const color = unquote(v);
+    return /^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([\d\s,.%]+\))$/i.test(color) ? color : "inherit";
+  };
 
   // Bold
   html = html.replace(/\[B\]([\s\S]*?)\[\/B\]/gi, "<strong>$1</strong>");
@@ -22,7 +34,7 @@ export function parseBBCode(text: string): string {
   // Color [COLOR=#hex]text[/COLOR] or [COLOR=name]text[/COLOR]
   html = html.replace(
     /\[COLOR=([^\]]+)\]([\s\S]*?)\[\/COLOR\]/gi,
-    '<span style="color: $1">$2</span>'
+    (_m, color: string, inner: string) => `<span style="color: ${safeColor(color)}">${inner}</span>`
   );
 
   // Quote [QUOTE]text[/QUOTE]
@@ -34,13 +46,15 @@ export function parseBBCode(text: string): string {
   // URL with custom text [URL=http://...]text[/URL]
   html = html.replace(
     /\[URL=([^\]]+)\]([\s\S]*?)\[\/URL\]/gi,
-    '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline font-semibold">$2</a>'
+    (_m, url: string, label: string) =>
+      `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline font-semibold">${label}</a>`
   );
 
   // URL [URL]http://...[/URL]
   html = html.replace(
     /\[URL\]([\s\S]*?)\[\/URL\]/gi,
-    '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline font-semibold">$1</a>'
+    (_m, url: string) =>
+      `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer" class="text-accent hover:underline font-semibold">${url}</a>`
   );
 
   // List [LIST]...[/LIST]

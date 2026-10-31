@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Send, Sparkles, Bot, User, Trash2, Loader2, ArrowRight } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type { RenduItem } from "../data/mockData";
-import { recueilApi } from "../utils/recueilApi";
+import { recueilApi, getServerRootUrl } from "../utils/recueilApi";
 import type { ResourceItem } from "../utils/recueilApi";
 import { defaultTemplatePsychoactif, defaultTemplateDruglab } from "../utils/templates";
 import type { AnalysisResult, EnrichedIdentifier, ScrapedResultDetails } from "../utils/scraper";
@@ -23,6 +23,13 @@ interface AgentPanelProps {
 
 type Step = "select_analysis" | "select_identifier" | "generating" | "idle";
 
+// Limites du prompt envoyé à l'IA (au-delà, plus lent et plus coûteux sans améliorer le résultat)
+const MAX_EXAMPLES = 6;
+const MAX_EXAMPLE_CHARS = 4000;
+const MAX_NOTE_CHARS = 2000;
+
+const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}\n[…]` : text);
+
 export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, onCreateRenduFromAI }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -31,11 +38,38 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
   const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisResult | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const [isLocked, setIsLocked] = useState(() => localStorage.getItem("iaAccessKey") !== "IA-PSYCHO-2026-XQW9");
+  // La clé d'accès est vérifiée par le serveur (elle n'est plus écrite dans le code, qui est public)
+  const [isLocked, setIsLocked] = useState(true);
+  const [lockError, setLockError] = useState("");
+
+  const callAI = (prompt: string) =>
+    invoke<string>("call_gemini", {
+      prompt,
+      serverUrl: getServerRootUrl(),
+      iaKey: localStorage.getItem("iaAccessKey") || "",
+    });
 
   useEffect(() => {
+    const checkAccess = async () => {
+      const iaKey = localStorage.getItem("iaAccessKey") || "";
+      if (!iaKey) {
+        setIsLocked(true);
+        setLockError("");
+        return;
+      }
+      try {
+        const ok = await invoke<boolean>("verify_ia_key", { serverUrl: getServerRootUrl(), iaKey });
+        setIsLocked(!ok);
+        setLockError(ok ? "" : "Clé d'accès refusée par le serveur.");
+      } catch (e) {
+        setIsLocked(true);
+        setLockError(e instanceof Error ? e.message : String(e));
+      }
+    };
+    checkAccess();
+
     const handleStorageUpdate = () => {
-      setIsLocked(localStorage.getItem("iaAccessKey") !== "IA-PSYCHO-2026-XQW9");
+      checkAccess();
     };
     window.addEventListener("recueilUpdated", handleStorageUpdate);
     
@@ -193,19 +227,20 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
     if (apiPassword) {
       try {
         const folders = await recueilApi.getResources();
-        const folderTexts: string[] = [];
-        for (const folder of folders) {
-          const items = await recueilApi.getResourceItems(folder.id);
-          const itemsText = items
+        const folderItems: ResourceItem[][] = await Promise.all(
+          folders.map((folder: { id: string }) => recueilApi.getResourceItems(folder.id))
+        );
+        const folderTexts: string[] = folders.map((folder: { title: string }, i: number) => {
+          const itemsText = folderItems[i]
             .map((item: ResourceItem) => {
               let line = `- [${item.type === "note" ? "Note" : "Lien"}] ${item.title}`;
               if (item.url) line += ` : ${item.url}`;
-              if (item.content) line += ` (Contenu : ${item.content})`;
+              if (item.content) line += ` (Contenu : ${truncate(item.content, MAX_NOTE_CHARS)})`;
               return line;
             })
             .join("\n");
-          folderTexts.push(`Dossier "${folder.title}":\n${itemsText}`);
-        }
+          return `Dossier "${folder.title}":\n${itemsText}`;
+        });
         if (folderTexts.length > 0) {
           recueilText = folderTexts.join("\n\n");
         }
@@ -214,10 +249,16 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
       }
     }
 
-    // 4. Compile previous user rendus
-    const userRendusText = rendus
-      .filter((r) => r.content?.trim())
-      .map((r) => `Titre: ${r.title}\nSubstance: ${r.substance}\nContenu:\n${r.content}`)
+    // 4. Compile previous user rendus : quelques exemples suffisent pour le style.
+    // Priorité à ceux qui portent sur le même produit, puis aux plus récents (la liste est triée du plus récent au plus ancien).
+    const product = (details?.expectedProduct || "").toLowerCase().trim();
+    const withContent = rendus.filter((r) => r.content?.trim());
+    const sameProduct = product
+      ? withContent.filter((r) => `${r.title} ${r.substance} ${r.content.slice(0, 300)}`.toLowerCase().includes(product))
+      : [];
+    const examples = [...new Set([...sameProduct, ...withContent])].slice(0, MAX_EXAMPLES);
+    const userRendusText = examples
+      .map((r) => `Titre: ${r.title}\nSubstance: ${r.substance}\nContenu:\n${truncate(r.content, MAX_EXAMPLE_CHARS)}`)
       .join("\n====================\n");
 
     // 5. Build prompt
@@ -251,7 +292,7 @@ Rédigez UNIQUEMENT le contenu final rempli en BBCode (la partie "Contenu:" du m
 
     // 6. Invoke call_gemini Tauri Command
     try {
-      const generatedText = await invoke<string>("call_gemini", { prompt });
+      const generatedText = await callAI(prompt);
       setMessages((prev) => [
         ...prev,
         {
@@ -270,7 +311,7 @@ Rédigez UNIQUEMENT le contenu final rempli en BBCode (la partie "Contenu:" du m
         {
           id: `agent-gen-err-${Date.now()}`,
           sender: "agent",
-          text: `Désolé, une erreur est survenue lors de l'appel à l'API Gemini 3.1 Flash-Lite :\n\n${errMsg}`,
+          text: `Désolé, une erreur est survenue lors de l'appel à l'IA Gemini :\n\n${errMsg}`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -300,7 +341,7 @@ Rédigez UNIQUEMENT le contenu final rempli en BBCode (la partie "Contenu:" du m
       .map((m) => `${m.sender === "user" ? "Utilisateur" : "IA"}: ${m.text}`)
       .join("\n\n");
 
-    const prompt = `Vous êtes l'assistant de rédaction du forum Psychonaut (IA Gemini 3.1 Flash-Lite).
+    const prompt = `Vous êtes l'assistant de rédaction du forum Psychonaut (IA Gemini).
 Voici le contexte des derniers échanges de la conversation :
 ${recentMessages}
 
@@ -310,7 +351,7 @@ ${textToSend}
 Répondez à l'utilisateur de manière concise et pertinente. S'il vous demande de modifier le BBCode généré précédemment, faites-le et retournez le BBCode modifié en entier.`;
 
     try {
-      const replyText = await invoke<string>("call_gemini", { prompt });
+      const replyText = await callAI(prompt);
       setMessages((prev) => [
         ...prev,
         {
@@ -375,6 +416,9 @@ Répondez à l'utilisateur de manière concise et pertinente. S'il vous demande 
         <p className="text-[11px] text-fg-muted mb-6 leading-relaxed">
           L'accès à l'intelligence artificielle est restreint. Une clé d'accès secrète est requise.
         </p>
+        {lockError && (
+          <p className="text-[10px] text-red-500 mb-3 leading-relaxed">{lockError}</p>
+        )}
         <p className="text-[10px] text-fg-muted/60 italic">
           (Rendez-vous dans les Paramètres ⚙️ pour saisir la clé d'accès)
         </p>

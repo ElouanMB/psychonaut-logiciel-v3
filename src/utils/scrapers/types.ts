@@ -5,6 +5,8 @@ export interface EnrichedIdentifier {
   psychoFound?: boolean;
   druglabUrl?: string;
   druglabFound?: boolean;
+  /** Erreur réseau / HTTP rencontrée lors de la vérification (au lieu d'un simple "non trouvé") */
+  checkError?: string;
 }
 
 export interface AnalysisResult {
