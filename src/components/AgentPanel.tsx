@@ -7,13 +7,29 @@ import type { ResourceItem } from "../utils/recueilApi";
 import { defaultTemplatePsychoactif, defaultTemplateDruglab } from "../utils/templates";
 import type { AnalysisResult, EnrichedIdentifier, ScrapedResultDetails } from "../utils/scraper";
 import { scrapePsychoactifDetails, scrapeDruglabDetails, scrapePsychonautRequest } from "../utils/scraper";
+import {
+  buildExamplesText,
+  buildFacts,
+  buildFollowUpPrompt,
+  buildGenerationPrompt,
+  buildRecueilText,
+  cleanAiText,
+  extractDraft,
+  finalizeDraft,
+  type GenerationContext,
+} from "../utils/aiRendu";
 
 interface Message {
   id: string;
   sender: "user" | "agent";
   text: string;
   timestamp: string;
+  /** Message contenant un rendu complet (déjà transmis à part dans les prompts suivants) */
+  isDraft?: boolean;
 }
+
+const now = () => new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 interface AgentPanelProps {
   rendus: RenduItem[];
@@ -23,19 +39,21 @@ interface AgentPanelProps {
 
 type Step = "select_analysis" | "select_identifier" | "generating" | "idle";
 
-// Limites du prompt envoyé à l'IA (au-delà, plus lent et plus coûteux sans améliorer le résultat)
-const MAX_EXAMPLES = 6;
-const MAX_EXAMPLE_CHARS = 4000;
-const MAX_NOTE_CHARS = 2000;
-
-const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}\n[…]` : text);
-
 export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, onCreateRenduFromAI }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [currentStep, setCurrentStep] = useState<Step>("select_analysis");
   const [selectedAnalysis, setSelectedAnalysis] = useState<AnalysisResult | null>(null);
+  // Contexte de la génération (faits, demande, modèle), réutilisé pour chaque correction demandée ensuite
+  const [genContext, setGenContext] = useState<GenerationContext | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const pushAgent = (text: string, extra: Partial<Message> = {}) =>
+    setMessages((prev) => [
+      ...prev,
+      { id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, sender: "agent", text, timestamp: now(), ...extra },
+    ]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // La clé d'accès est vérifiée par le serveur (elle n'est plus écrite dans le code, qui est public)
@@ -131,279 +149,153 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
 
   const handleReset = () => {
     setSelectedAnalysis(null);
+    setGenContext(null);
+    setDraft(null);
     setCurrentStep("select_analysis");
     setMessages([
       {
         id: "init",
         sender: "agent",
         text: "Bonjour ! Je suis votre assistant IA Psychonaut.\n\nQuelle analyse souhaitez-vous rédiger aujourd'hui ? Veuillez choisir parmi la liste des analyses identifiées / prêtes ci-dessous :",
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        timestamp: now(),
       },
     ]);
   };
 
   const handleSelectAnalysis = (analysis: AnalysisResult) => {
     setSelectedAnalysis(analysis);
-    
-    // Add user message
-    const userMsg: Message = {
-      id: `user-ana-${Date.now()}`,
-      sender: "user",
-      text: `J'aimerais rédiger l'analyse : ${analysis.title}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-
-    const agentMsg: Message = {
-      id: `agent-ana-${Date.now()}`,
-      sender: "agent",
-      text: "Parfait. Quel identifiant souhaitez-vous utiliser pour cette analyse ?",
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-
-    setMessages((prev) => [...prev, userMsg, agentMsg]);
+    setMessages((prev) => [
+      ...prev,
+      { id: `user-ana-${Date.now()}`, sender: "user", text: `J'aimerais rédiger l'analyse : ${analysis.title}`, timestamp: now() },
+      { id: `agent-ana-${Date.now()}`, sender: "agent", text: "Parfait. Quel identifiant souhaitez-vous utiliser pour cette analyse ?", timestamp: now() },
+    ]);
     setCurrentStep("select_identifier");
   };
 
   const handleSelectIdentifier = async (identifier: EnrichedIdentifier) => {
-    setCurrentStep("generating");
-
-    // Add user message
-    const userMsg: Message = {
-      id: `user-id-${Date.now()}`,
-      sender: "user",
-      text: `Utiliser l'identifiant : ${identifier.canonical}`,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-
-    const agentMsg: Message = {
-      id: `agent-gen-${Date.now()}`,
-      sender: "agent",
-      text: `Je lance la récupération des données pour l'identifiant ${identifier.canonical} et la génération du rendu avec l'IA. Veuillez patienter...`,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-
-    setMessages((prev) => [...prev, userMsg, agentMsg]);
-    setIsTyping(true);
-
     if (!selectedAnalysis) return;
-    await runAIGeneration(selectedAnalysis, identifier);
+    setCurrentStep("generating");
+    setMessages((prev) => [
+      ...prev,
+      { id: `user-id-${Date.now()}`, sender: "user", text: `Utiliser l'identifiant : ${identifier.canonical}`, timestamp: now() },
+      {
+        id: `agent-gen-${Date.now()}`,
+        sender: "agent",
+        text: `Je récupère les données de ${identifier.canonical} et je rédige le rendu. Veuillez patienter...`,
+        timestamp: now(),
+      },
+    ]);
+    setIsTyping(true);
+    try {
+      await runAIGeneration(selectedAnalysis, identifier);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const runAIGeneration = async (analysis: AnalysisResult, identifier: EnrichedIdentifier) => {
+    const isPsychoactif = !!(identifier.psychoFound && identifier.psychoUrl);
+    const sourceUrl = isPsychoactif ? identifier.psychoUrl : identifier.druglabUrl;
+    const warnings: string[] = [];
+
+    // 1. Résultat du labo : sans lui, l'IA inventerait. On s'arrête et on le dit.
     let details: ScrapedResultDetails | null = null;
-    const isPsychoactif = identifier.psychoFound && identifier.psychoUrl;
-    const isDruglab = identifier.druglabFound && identifier.druglabUrl;
-
-    // 1. Scrape details
-    let requestText = "Aucune demande initiale récupérée.";
     try {
-      if (analysis.url) {
-        const req = await scrapePsychonautRequest(analysis.url);
-        if (req) {
-          requestText = req;
-        }
-      }
-
-      if (isPsychoactif) {
-        details = await scrapePsychoactifDetails(identifier.psychoUrl || "");
-      } else if (isDruglab) {
-        details = await scrapeDruglabDetails(identifier.druglabUrl || "");
-      }
+      if (!sourceUrl) throw new Error("aucune adresse de résultat pour cet identifiant");
+      details = isPsychoactif ? await scrapePsychoactifDetails(sourceUrl) : await scrapeDruglabDetails(sourceUrl);
+      if (!details) throw new Error("page de résultat vide");
     } catch (e) {
-      console.error("Erreur lors du scraping des détails:", e);
+      pushAgent(
+        `Impossible de récupérer le résultat de ${identifier.canonical} sur ${isPsychoactif ? "Psychoactif" : "DrugLab"} : ${errorText(e)}\n\nRien n'a été envoyé à l'IA. Réessayez en choisissant l'identifiant.`
+      );
+      setCurrentStep("select_identifier");
+      return;
     }
+    const facts = buildFacts(details, identifier.canonical);
 
-    // 2. Fetch templates
-    let template = "";
-    if (isPsychoactif) {
-      template = localStorage.getItem("templatePsychoactif") || defaultTemplatePsychoactif;
-    } else if (isDruglab) {
-      template = localStorage.getItem("templateDruglab") || defaultTemplateDruglab;
+    // 2. Demande initiale sur le forum
+    let brief = "";
+    try {
+      brief = (analysis.url && (await scrapePsychonautRequest(analysis.url))) || "";
+    } catch {
+      brief = "";
     }
+    if (!brief) warnings.push("La demande initiale du forum n'a pas pu être récupérée : l'IA ne sait pas ce qui avait été annoncé.");
 
-    // 3. Fetch recueil
-    let recueilText = "Aucune information disponible dans le recueil.";
-    const apiPassword = localStorage.getItem("recueilApiPassword");
-    if (apiPassword) {
+    // 3. Modèle
+    const template = isPsychoactif
+      ? localStorage.getItem("templatePsychoactif") || defaultTemplatePsychoactif
+      : localStorage.getItem("templateDruglab") || defaultTemplateDruglab;
+
+    // 4. Recueil, trié par pertinence
+    let recueil = "";
+    if (localStorage.getItem("recueilApiPassword")) {
       try {
         const folders = await recueilApi.getResources();
         const folderItems: ResourceItem[][] = await Promise.all(
           folders.map((folder: { id: string }) => recueilApi.getResourceItems(folder.id))
         );
-        const folderTexts: string[] = folders.map((folder: { title: string }, i: number) => {
-          const itemsText = folderItems[i]
-            .map((item: ResourceItem) => {
-              let line = `- [${item.type === "note" ? "Note" : "Lien"}] ${item.title}`;
-              if (item.url) line += ` : ${item.url}`;
-              if (item.content) line += ` (Contenu : ${truncate(item.content, MAX_NOTE_CHARS)})`;
-              return line;
-            })
-            .join("\n");
-          return `Dossier "${folder.title}":\n${itemsText}`;
-        });
-        if (folderTexts.length > 0) {
-          recueilText = folderTexts.join("\n\n");
-        }
+        recueil = buildRecueilText(folders, folderItems, facts.keywords);
       } catch (e) {
-        console.warn("Erreur de récupération du recueil pour le prompt IA", e);
+        warnings.push(`Recueil non chargé (${errorText(e)}) : la partie Documentations risque d'être pauvre.`);
       }
     }
 
-    // 4. Compile previous user rendus : quelques exemples suffisent pour le style.
-    // Priorité à ceux qui portent sur le même produit, puis aux plus récents (la liste est triée du plus récent au plus ancien).
-    const product = (details?.expectedProduct || "").toLowerCase().trim();
-    const withContent = rendus.filter((r) => r.content?.trim());
-    const sameProduct = product
-      ? withContent.filter((r) => `${r.title} ${r.substance} ${r.content.slice(0, 300)}`.toLowerCase().includes(product))
-      : [];
-    const examples = [...new Set([...sameProduct, ...withContent])].slice(0, MAX_EXAMPLES);
-    const userRendusText = examples
-      .map((r) => `Titre: ${r.title}\nSubstance: ${r.substance}\nContenu:\n${truncate(r.content, MAX_EXAMPLE_CHARS)}`)
-      .join("\n====================\n");
+    // 5. Exemples de style (sans leurs chiffres)
+    const examples = buildExamplesText(rendus, facts.keywords);
 
-    // 5. Build prompt
-    const detailsText = details
-      ? JSON.stringify(details, null, 2)
-      : "Aucun détail d'analyse n'a pu être récupéré sur le site source.";
+    const ctx: GenerationContext = { analysisTitle: analysis.title, facts, brief, template };
+    const prompt = buildGenerationPrompt(ctx, recueil, examples);
 
-    const prompt = `Vous êtes un assistant de rédaction spécialisé pour le forum Psychonaut. Votre tâche consiste à générer le contenu du rapport final d'analyse (rendu) à partir des données brutes récoltées et en respectant rigoureusement le modèle (template) adéquat ainsi que le style de l'utilisateur.
-
-Voici les informations sur l'analyse en cours :
-- Titre de l'analyse : ${analysis.title}
-- Identifiant choisi : ${identifier.canonical}
-- Source : ${isPsychoactif ? "Psychoactif" : "DrugLab"}
-
-Voici la demande initiale de l'utilisateur (le "brief") récupérée sur le forum :
-${requestText}
-
-Données brutes récupérées pour l'analyse :
-${detailsText}
-
-Modèle (template) à remplir obligatoirement (conservez la structure, les balises de BBCode comme [B], [I], [URL], etc.) :
-${template}
-
-Voici des informations de contexte supplémentaires provenant du recueil de l'utilisateur :
-${recueilText}
-
-Voici des exemples de rendus rédigés précédemment par l'utilisateur (le texte à imiter se trouve sous "Contenu:"). Rédigez le nouveau rendu dans le même style d'écriture (ton, rigueur, vocabulaire, mise en page BBCode) :
-${userRendusText || "Aucun exemple disponible."}
-
-Rédigez UNIQUEMENT le contenu final rempli en BBCode (la partie "Contenu:" du modèle) dans votre réponse. N'incluez SURTOUT PAS les mentions "Titre:", "Substance:" ou "Contenu:", ni aucune phrase d'introduction ou de conclusion.`;
-
-    // 6. Invoke call_gemini Tauri Command
     try {
-      const generatedText = await callAI(prompt);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `agent-gen-res-${Date.now()}`,
-          sender: "agent",
-          text: generatedText,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-      setCurrentStep("idle");
+      const generated = await callAI(prompt);
+      const { text, warnings: draftWarnings } = finalizeDraft(generated, facts);
+      setGenContext(ctx);
+      setDraft(text);
+      pushAgent(text, { isDraft: true });
+      const allWarnings = [...warnings, ...draftWarnings];
+      if (allWarnings.length) pushAgent(`⚠️ À vérifier :\n${allWarnings.map((w) => `• ${w}`).join("\n")}`);
     } catch (err) {
       console.error(err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `agent-gen-err-${Date.now()}`,
-          sender: "agent",
-          text: `Désolé, une erreur est survenue lors de l'appel à l'IA Gemini :\n\n${errMsg}`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
-      setCurrentStep("idle");
+      pushAgent(`Désolé, une erreur est survenue lors de l'appel à l'IA :\n\n${errorText(err)}`);
     } finally {
-      setIsTyping(false);
+      setCurrentStep("idle");
     }
   };
 
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim() || isTyping) return;
 
-    const userMsg: Message = {
-      id: `user-msg-${Date.now()}`,
-      sender: "user",
-      text: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
+    const history = messages.filter((m) => !m.isDraft && m.id !== "init").map((m) => ({ sender: m.sender, text: m.text }));
+    setMessages((prev) => [...prev, { id: `user-msg-${Date.now()}`, sender: "user", text: textToSend, timestamp: now() }]);
     setInput("");
     setIsTyping(true);
 
-    // Context message payload
-    const recentMessages = messages
-      .slice(-6)
-      .map((m) => `${m.sender === "user" ? "Utilisateur" : "IA"}: ${m.text}`)
-      .join("\n\n");
-
-    const prompt = `Vous êtes l'assistant de rédaction du forum Psychonaut (IA Gemini).
-Voici le contexte des derniers échanges de la conversation :
-${recentMessages}
-
-Nouveau message de l'utilisateur :
-${textToSend}
-
-Répondez à l'utilisateur de manière concise et pertinente. S'il vous demande de modifier le BBCode généré précédemment, faites-le et retournez le BBCode modifié en entier.`;
-
     try {
-      const replyText = await callAI(prompt);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `agent-reply-${Date.now()}`,
-          sender: "agent",
-          text: replyText,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+      const reply = await callAI(buildFollowUpPrompt(genContext, draft, history, textToSend));
+      const { draft: newDraft, rest } = extractDraft(reply);
+      if (rest) pushAgent(cleanAiText(rest));
+      if (newDraft) {
+        const { text, warnings } = finalizeDraft(newDraft, genContext?.facts ?? null);
+        setDraft(text);
+        pushAgent(text, { isDraft: true });
+        if (warnings.length) pushAgent(`⚠️ À vérifier :\n${warnings.map((w) => `• ${w}`).join("\n")}`);
+      }
     } catch (err) {
       console.error(err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `agent-reply-err-${Date.now()}`,
-          sender: "agent",
-          text: `Erreur lors de la réponse de l'IA : ${errMsg}`,
-          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+      pushAgent(`Erreur lors de la réponse de l'IA : ${errorText(err)}`);
     } finally {
       setIsTyping(false);
     }
   };
 
-  // Find the last agent message to check if it has BBCode to inject
-  const lastAgentMessage = [...messages]
-    .reverse()
-    .find((m) => m.sender === "agent" && (m.text.includes("[") || m.text.includes("]")));
-
-  const extractBBCode = (txt: string) => {
-    const startIndex = txt.indexOf("[");
-    const endIndex = txt.lastIndexOf("]") + 1;
-    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
-      return txt.slice(startIndex, endIndex);
-    }
-    return txt;
-  };
-
   const handleInject = () => {
-    if (lastAgentMessage) {
-      const bbcode = extractBBCode(lastAgentMessage.text);
-      window.dispatchEvent(new CustomEvent("insertEditorText", { detail: bbcode }));
-    }
+    if (draft) window.dispatchEvent(new CustomEvent("insertEditorText", { detail: draft }));
   };
 
   const handleCreateNewRendu = () => {
-    if (lastAgentMessage && onCreateRenduFromAI && selectedAnalysis) {
-      const bbcode = extractBBCode(lastAgentMessage.text);
-      onCreateRenduFromAI(selectedAnalysis.title, bbcode);
-    }
+    const title = genContext?.analysisTitle || selectedAnalysis?.title;
+    if (draft && onCreateRenduFromAI && title) onCreateRenduFromAI(title, draft);
   };
 
   if (isLocked) {
@@ -542,7 +434,7 @@ Répondez à l'utilisateur de manière concise et pertinente. S'il vous demande 
       </div>
 
       {/* BBCode Injection Buttons */}
-      {lastAgentMessage && currentStep === "idle" && (
+      {draft && currentStep === "idle" && (
         <div className="p-2 border-t border-border-main bg-accent/5 flex flex-col gap-1.5 shrink-0">
           <button
             type="button"
