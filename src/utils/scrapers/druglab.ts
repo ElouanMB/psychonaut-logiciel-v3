@@ -23,8 +23,7 @@ export async function scrapeDruglabDetails(url: string): Promise<ScrapedResultDe
   const doc = new DOMParser().parseFromString(res.text, 'text/html');
 
   const buyAs = doc.querySelector('.buy-as .name');
-  if (!buyAs) throw new Error("Page de résultat DrugLab illisible (bloc « Acheté comme » introuvable)");
-  const expectedProduct = clean(buyAs.textContent?.replace('Acheté comme', ''));
+  const expectedProduct = clean(buyAs?.textContent?.replace('Acheté comme', ''));
 
   const substances: string[] = [];
   doc.querySelectorAll('.substance').forEach((node) => {
@@ -56,8 +55,14 @@ export async function scrapeDruglabDetails(url: string): Promise<ScrapedResultDe
   doc.querySelectorAll('ul.legende li').forEach((li) => {
     const qty = clean(li.querySelector('.quantite')?.textContent);
     const name = clean(li.querySelector('.texte_value')?.textContent);
-    const pct = Number.parseFloat(qty.replace(',', '.'));
-    if (name) composition.push({ name, ...(Number.isFinite(pct) ? { percent: pct } : { amount: qty }) });
+    // Pourcentage seulement si l'unité est « % » (une légende en « 150 µg » reste une quantité)
+    const pct = qty.match(/^(\d+(?:[.,]\d+)?)\s*%/);
+    if (name) {
+      composition.push({
+        name,
+        ...(pct ? { percent: Number.parseFloat(pct[1].replace(',', '.')) } : qty ? { amount: qty } : {}),
+      });
+    }
   });
 
   const risks: string[] = [];
@@ -76,6 +81,11 @@ export async function scrapeDruglabDetails(url: string): Promise<ScrapedResultDe
   const commentSection = Array.from(doc.querySelectorAll('.titre_sub')).find((el) => el.textContent?.includes('Commentaire'));
   if (commentSection?.parentElement) {
     comments = commentSection.parentElement.textContent?.replace(commentSection.textContent || '', '').trim() || '';
+  }
+
+  // Sans aucun bloc reconnu, la page n'est pas un résultat exploitable (structure du site modifiée ?)
+  if (!buyAs && !substances.length && !expectedFound.length && !unexpectedFound.length && !composition.length) {
+    throw new Error('Page de résultat DrugLab illisible (aucun bloc de résultat reconnu)');
   }
 
   return {

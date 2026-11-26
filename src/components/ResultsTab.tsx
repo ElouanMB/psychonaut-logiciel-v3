@@ -82,6 +82,9 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set());
   const [detailsCache, setDetailsCache] = useState<Record<string, ScrapedResultDetails | null>>({});
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  // Dernière erreur de récupération par sujet, affichée dans le détail au lieu d'échouer en silence
+  const [detailsError, setDetailsError] = useState<Record<string, string>>({});
+  const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
   const [isWritingId, setIsWritingId] = useState<string | null>(null);
 
   const handleWriteRendu = async (item: AnalysisResult, psychoUrl?: string, druglabUrl?: string) => {
@@ -98,9 +101,13 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
         }
         if (details) {
           setDetailsCache(prev => ({ ...prev, [item.url]: details }));
+          setDetailsError(prev => { const { [item.url]: _, ...rest } = prev; return rest; });
         }
       } catch (e) {
         console.error(e);
+        setDetailsError(prev => ({ ...prev, [item.url]: errorMessage(e) }));
+        // On ouvre le détail pour que l'erreur soit visible
+        setExpandedUrls(prev => new Set(prev).add(item.url));
       }
     }
     
@@ -128,8 +135,10 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
         details = await scrapeDruglabDetails(druglabUrl);
       }
       setDetailsCache(prev => ({ ...prev, [itemUrl]: details }));
+      setDetailsError(prev => { const { [itemUrl]: _, ...rest } = prev; return rest; });
     } catch (e) {
       console.error(e);
+      setDetailsError(prev => ({ ...prev, [itemUrl]: errorMessage(e) }));
     } finally {
       setIsLoadingDetails(false);
     }
@@ -326,7 +335,9 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
                 )}
               </div>
             ) : (
-              <div className="text-yellow-500">Impossible de charger les détails.</div>
+              <div className="text-yellow-500">
+                Impossible de charger les détails{detailsError[item.url] ? ` : ${detailsError[item.url]}` : "."}
+              </div>
             )}
           </div>
         )}

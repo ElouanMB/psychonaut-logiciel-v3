@@ -75,21 +75,28 @@ export function computePsychoactifQuantification(d: ScrapedResultDetails): Quant
   if (base === undefined) return null;
 
   if (base > 0) {
-    const salted = compounds.find((c) => c.saltEquivalent && c.percent !== undefined);
-    if (salted?.percent !== undefined && salted.saltEquivalent) {
-      const s = salted.percent;
+    // Molécule principale, celle à laquelle se rapporte le champ « équivalent base » :
+    // d'abord par son nom, sinon par la valeur, sinon un équivalent sel cohérent (un sel pèse plus que la base).
+    // On ne prend jamais le sel d'un produit de coupe (ex. lidocaïne) pour la molécule principale.
+    const expected = normalizeName(d.expectedProduct || '');
+    const main =
+      compounds.find((c) => expected && normalizeName(c.name) === expected) ??
+      compounds.find((c) => c.percent !== undefined && Math.abs(c.percent - base) < 0.51) ??
+      compounds.find((c) => c.saltEquivalent && c.percent !== undefined && c.percent >= base - 0.5) ??
+      compounds[0];
+
+    if (main?.saltEquivalent && main.percent !== undefined && main.percent >= base - 0.5) {
+      const s = main.percent;
       return {
-        line: `[I]${fmtPct(base)}% base, donc ${fmtPct(s)}% ${salted.saltEquivalent} ${interval(s)}.[/I]`,
+        line: `[I]${fmtPct(base)}% base, donc ${fmtPct(s)}% ${main.saltEquivalent} ${interval(s)}.[/I]`,
         numbers: [base, s, s * 0.9, s * 1.1],
       };
     }
 
-    const expected = normalizeName(d.expectedProduct || '');
-    const main =
-      compounds.find((c) => c.percent !== undefined && Math.abs(c.percent - base) < 0.51) ??
-      compounds.find((c) => expected && normalizeName(c.name) === expected);
     const name = main?.name || (d.expectedProduct || '').replace(/\(.*\)/, '').trim();
-    const neutral = NEUTRAL_MOLECULES.some((m) => normalizeName(name).includes(m));
+    // Comparaison mot à mot : « thc » ne doit pas correspondre à « méthcathinone »
+    const tokens = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9]+/);
+    const neutral = NEUTRAL_MOLECULES.some((m) => tokens.includes(m));
     const what = name ? ` ${deMolecule(name)}` : '';
     // Le champ Psychoactif est un équivalent base, même au-delà de 100% (base pure + 10% d'incertitude)
     const form = neutral ? '' : ' base';
@@ -140,7 +147,8 @@ export function findUnknownQuantNumbers(text: string, allowed: number[]): string
   if (!m) return [];
   const after = text.slice(m.index + m[0].length).split('\n').slice(0, 3).join(' ');
   const quantText = after.split(/\[URL|\[HEADING/i)[0];
-  const found = quantText.match(/\d+(?:[.,]\d+)?/g) ?? [];
+  // Uniquement les quantités (nombre suivi de % / µg / mg / g), pas les chiffres des noms (3-MMC, 2C-B, 1P-LSD)
+  const found = [...quantText.matchAll(/(?<![\p{L}\d.,-])(\d+(?:[.,]\d+)?)\s*(?=%|µg|μg|mg\b|g\b)/gu)].map((x) => x[1]);
   return found.filter((raw) => {
     const n = Number.parseFloat(raw.replace(',', '.'));
     if (n === 10) return false; // « 10% d'incertitude »
@@ -413,12 +421,21 @@ export function cleanAiText(text: string): string {
   return t.trim();
 }
 
-/** Sépare un éventuel rendu (<rendu>…</rendu>) du reste de la réponse */
-export function extractDraft(text: string): { draft: string | null; rest: string } {
+/**
+ * Sépare un éventuel rendu (<rendu>…</rendu>) du reste de la réponse.
+ * Sans balises, la réponse n'est prise pour un rendu que si elle commence comme le modèle
+ * (une explication qui cite « [I]Quantification[/I] » reste un simple message).
+ */
+export function extractDraft(text: string, template?: string): { draft: string | null; rest: string } {
   const m = text.match(/<rendu>\s*([\s\S]*?)\s*<\/rendu>/i);
   if (m) return { draft: m[1].trim(), rest: text.replace(m[0], '').trim() };
-  if (QUANT_HEADER.test(text) || /\[HEADING=/i.test(text)) return { draft: text.trim(), rest: '' };
-  return { draft: null, rest: text.trim() };
+  const trimmed = text.trim();
+  const firstLine = (template || '').split('\n').find((l) => l.trim())?.split(':')[0].trim();
+  const key = (s: string) => normalizeName(s).slice(0, 20);
+  if (firstLine && key(firstLine).length >= 5 && key(trimmed).startsWith(key(firstLine))) {
+    return { draft: trimmed, rest: '' };
+  }
+  return { draft: null, rest: trimmed };
 }
 
 /** Post-traitement commun : nettoyage, quantification imposée, alertes */

@@ -44,13 +44,16 @@ export async function scrapePsychoactifDetails(url: string): Promise<ScrapedResu
   const percentageMatch = htmlContent.match(/Pourcentage[^:]*:\s*(?:<b>)?([^<]+)(?:<\/b>)?/i);
   const aspectMatch = htmlContent.match(/Aspect\s*:\s*([^<]+)/i);
   const supplyModeMatch = htmlContent.match(/Mode d'approvisionnement\s*:\s*([^<]+)/i);
-  const processedByMatch = postmsg.textContent?.match(/Cette analyse a été traitée par\s+([^\n]+?)(?:\s{2,}|$)/i);
+  const processedByMatch = postmsg.textContent?.match(/Cette analyse a été traitée par\s+([^\n]+)/i);
 
   const commentsDiv = postmsg.querySelector('div[style*="margin-left:30px"]');
   let comments = '';
   if (commentsDiv) {
     const clone = commentsDiv.cloneNode(true) as HTMLElement;
-    clone.innerHTML = clone.innerHTML.replace(/Nos résultats sont rendus avec une incertitude de \+\/-10%;/gi, '');
+    // textContent ignore les <br> : on les transforme en retours à la ligne pour garder une molécule par ligne
+    clone.innerHTML = clone.innerHTML
+      .replace(/Nos résultats sont rendus avec une incertitude de \+\/-10%;/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n');
     const iTags = clone.querySelectorAll('i');
     if (iTags.length > 0) {
       comments = Array.from(iTags).map((i) => i.textContent?.trim()).join('\n');
@@ -75,7 +78,7 @@ export async function scrapePsychoactifDetails(url: string): Promise<ScrapedResu
     compounds,
     aspect: aspectMatch ? aspectMatch[1].trim() : '',
     supplyMode: supplyModeMatch ? supplyModeMatch[1].trim() : '',
-    processedBy: processedByMatch ? processedByMatch[1].trim() : '',
+    processedBy: processedByMatch ? processedByMatch[1].split(/\s{2,}/)[0].trim() : '',
     comments: comments.trim(),
   };
 }

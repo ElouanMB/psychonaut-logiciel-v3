@@ -147,7 +147,12 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
+  // Incrémenté à chaque réinitialisation / nouvelle requête : une réponse arrivée après coup est ignorée
+  const runIdRef = useRef(0);
+
   const handleReset = () => {
+    runIdRef.current++;
+    setIsTyping(false);
     setSelectedAnalysis(null);
     setGenContext(null);
     setDraft(null);
@@ -186,14 +191,16 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
       },
     ]);
     setIsTyping(true);
+    const runId = ++runIdRef.current;
+    const isStale = () => runId !== runIdRef.current;
     try {
-      await runAIGeneration(selectedAnalysis, identifier);
+      await runAIGeneration(selectedAnalysis, identifier, isStale);
     } finally {
-      setIsTyping(false);
+      if (!isStale()) setIsTyping(false);
     }
   };
 
-  const runAIGeneration = async (analysis: AnalysisResult, identifier: EnrichedIdentifier) => {
+  const runAIGeneration = async (analysis: AnalysisResult, identifier: EnrichedIdentifier, isStale: () => boolean) => {
     const isPsychoactif = !!(identifier.psychoFound && identifier.psychoUrl);
     const sourceUrl = isPsychoactif ? identifier.psychoUrl : identifier.druglabUrl;
     const warnings: string[] = [];
@@ -205,12 +212,14 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
       details = isPsychoactif ? await scrapePsychoactifDetails(sourceUrl) : await scrapeDruglabDetails(sourceUrl);
       if (!details) throw new Error("page de résultat vide");
     } catch (e) {
+      if (isStale()) return;
       pushAgent(
         `Impossible de récupérer le résultat de ${identifier.canonical} sur ${isPsychoactif ? "Psychoactif" : "DrugLab"} : ${errorText(e)}\n\nRien n'a été envoyé à l'IA. Réessayez en choisissant l'identifiant.`
       );
       setCurrentStep("select_identifier");
       return;
     }
+    if (isStale()) return;
     const facts = buildFacts(details, identifier.canonical);
 
     // 2. Demande initiale sur le forum
@@ -220,6 +229,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
     } catch {
       brief = "";
     }
+    if (isStale()) return;
     if (!brief) warnings.push("La demande initiale du forum n'a pas pu être récupérée : l'IA ne sait pas ce qui avait été annoncé.");
 
     // 3. Modèle
@@ -241,6 +251,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
       }
     }
 
+    if (isStale()) return;
+
     // 5. Exemples de style (sans leurs chiffres)
     const examples = buildExamplesText(rendus, facts.keywords);
 
@@ -249,6 +261,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
 
     try {
       const generated = await callAI(prompt);
+      if (isStale()) return;
       const { text, warnings: draftWarnings } = finalizeDraft(generated, facts);
       setGenContext(ctx);
       setDraft(text);
@@ -257,9 +270,10 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
       if (allWarnings.length) pushAgent(`⚠️ À vérifier :\n${allWarnings.map((w) => `• ${w}`).join("\n")}`);
     } catch (err) {
       console.error(err);
+      if (isStale()) return;
       pushAgent(`Désolé, une erreur est survenue lors de l'appel à l'IA :\n\n${errorText(err)}`);
     } finally {
-      setCurrentStep("idle");
+      if (!isStale()) setCurrentStep("idle");
     }
   };
 
@@ -270,10 +284,13 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
     setMessages((prev) => [...prev, { id: `user-msg-${Date.now()}`, sender: "user", text: textToSend, timestamp: now() }]);
     setInput("");
     setIsTyping(true);
+    const runId = ++runIdRef.current;
+    const isStale = () => runId !== runIdRef.current;
 
     try {
       const reply = await callAI(buildFollowUpPrompt(genContext, draft, history, textToSend));
-      const { draft: newDraft, rest } = extractDraft(reply);
+      if (isStale()) return;
+      const { draft: newDraft, rest } = extractDraft(reply, genContext?.template);
       if (rest) pushAgent(cleanAiText(rest));
       if (newDraft) {
         const { text, warnings } = finalizeDraft(newDraft, genContext?.facts ?? null);
@@ -283,9 +300,9 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ rendus, scrapedResults, 
       }
     } catch (err) {
       console.error(err);
-      pushAgent(`Erreur lors de la réponse de l'IA : ${errorText(err)}`);
+      if (!isStale()) pushAgent(`Erreur lors de la réponse de l'IA : ${errorText(err)}`);
     } finally {
-      setIsTyping(false);
+      if (!isStale()) setIsTyping(false);
     }
   };
 
