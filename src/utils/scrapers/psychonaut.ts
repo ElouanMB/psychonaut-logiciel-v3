@@ -285,7 +285,8 @@ export function extractIdentifiers(title: string) {
   }
   // PSYCHO, PSY et RDRAD sont trois séries distinctes sur Psychoactif : PSY254920 et PSYCHO254920
   // sont deux échantillons différents, le préfixe doit donc être conservé tel quel.
-  const rePrefixed = /(PSYCHO|PSY|RDRAD)\s*-?\s*(\d{5,10})/gi;
+  // Séparateurs tolérés entre préfixe et numéro : espace - _ . : # ° et « n° » (PSY_268978, PSY n°268978…)
+  const rePrefixed = /(PSYCHO|PSY|RDRAD)[\s\-_.:#°]*(?:n[°o]?\.?)?[\s\-_.:#°]*(\d{5,10})/gi;
   for (const match of title.matchAll(rePrefixed)) {
     add(match[0].toUpperCase(), `${match[1].toUpperCase()}${match[2]}`);
   }

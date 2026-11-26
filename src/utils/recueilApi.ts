@@ -90,7 +90,13 @@ export interface SyncRendu {
 
 export const recueilApi = {
   // Resources
-  getResources: () => fetchApi('/resources'),
+  // Dossiers triés par ordre alphabétique (sans tenir compte des accents ni de la casse, "Dossier 2" avant "Dossier 10")
+  getResources: async (): Promise<Resource[]> => {
+    const list: Resource[] = await fetchApi('/resources');
+    return [...list].sort((a, b) =>
+      (a.title || '').localeCompare(b.title || '', 'fr', { sensitivity: 'base', numeric: true })
+    );
+  },
   createResource: (title: string) => fetchApi('/resources', { method: 'POST', body: { title } }),
   updateResource: (id: string, title: string) => fetchApi(`/resources/${id}`, { method: 'PUT', body: { title } }),
   deleteResource: (id: string) => fetchApi(`/resources/${id}`, { method: 'DELETE' }),

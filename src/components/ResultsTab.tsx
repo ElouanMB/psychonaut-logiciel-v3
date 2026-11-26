@@ -69,17 +69,22 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
 
   const getTagStyle = (label: string | null) => {
     if (!label) return null;
-    const l = label.toLowerCase();
+    // Comparaison sans casse, espaces ni tirets : "CheckLab", "Check-Labs", "ATP idf"...
+    const l = label.toLowerCase().replace(/[^a-z0-9]/g, "");
     if (l.includes("druglab")) return { bg: "bg-yellow-500/10", text: "text-yellow-500", border: "border-yellow-500/20", label: "DrugLab" };
     if (l.includes("atpidf")) return { bg: "bg-red-500/10", text: "text-red-500", border: "border-red-500/20", label: "ATPIDF" };
-    if (l.includes("checklabs")) return { bg: "bg-green-500/10", text: "text-green-500", border: "border-green-500/20", label: "CheckLabs" };
+    if (l.includes("checklab")) return { bg: "bg-green-500/10", text: "text-green-500", border: "border-green-500/20", label: "CheckLab" };
     if (l.includes("sintes")) return { bg: "bg-gray-500/10", text: "text-gray-400", border: "border-gray-500/20", label: "SINTES" };
-    return null;
+    // Tag inconnu du logiciel : on l'affiche quand même, en neutre, plutôt que de le cacher
+    return { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/20", label };
   };
 
   const [expandedUrls, setExpandedUrls] = useState<Set<string>>(new Set());
   const [detailsCache, setDetailsCache] = useState<Record<string, ScrapedResultDetails | null>>({});
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  // Dernière erreur de récupération par sujet, affichée dans le détail au lieu d'échouer en silence
+  const [detailsError, setDetailsError] = useState<Record<string, string>>({});
+  const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
   const [isWritingId, setIsWritingId] = useState<string | null>(null);
 
   const handleWriteRendu = async (item: AnalysisResult, psychoUrl?: string, druglabUrl?: string) => {
@@ -96,9 +101,13 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
         }
         if (details) {
           setDetailsCache(prev => ({ ...prev, [item.url]: details }));
+          setDetailsError(prev => { const { [item.url]: _, ...rest } = prev; return rest; });
         }
       } catch (e) {
         console.error(e);
+        setDetailsError(prev => ({ ...prev, [item.url]: errorMessage(e) }));
+        // On ouvre le détail pour que l'erreur soit visible
+        setExpandedUrls(prev => new Set(prev).add(item.url));
       }
     }
     
@@ -126,8 +135,10 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
         details = await scrapeDruglabDetails(druglabUrl);
       }
       setDetailsCache(prev => ({ ...prev, [itemUrl]: details }));
+      setDetailsError(prev => { const { [itemUrl]: _, ...rest } = prev; return rest; });
     } catch (e) {
       console.error(e);
+      setDetailsError(prev => ({ ...prev, [itemUrl]: errorMessage(e) }));
     } finally {
       setIsLoadingDetails(false);
     }
@@ -324,7 +335,9 @@ export const ResultsTab: React.FC<ResultsTabProps> = ({ scrapedResults, onCreate
                 )}
               </div>
             ) : (
-              <div className="text-yellow-500">Impossible de charger les détails.</div>
+              <div className="text-yellow-500">
+                Impossible de charger les détails{detailsError[item.url] ? ` : ${detailsError[item.url]}` : "."}
+              </div>
             )}
           </div>
         )}
